@@ -36,8 +36,13 @@ import {
 
 import {
   account,
+  APPWRITE_ASSIGNMENTS_COLLECTION_ID,
   APPWRITE_DATABASE_ID,
+  APPWRITE_FOCUS_COLLECTION_ID,
+  APPWRITE_GOALS_COLLECTION_ID,
   APPWRITE_NOTES_COLLECTION_ID,
+  APPWRITE_SKILLS_COLLECTION_ID,
+  APPWRITE_TASKS_COLLECTION_ID,
   databases,
   isAppwriteConfigured,
   Query,
@@ -301,51 +306,244 @@ export default function App() {
     localStorage.getItem("buddyspace_user") || "Bikram"
   );
 
-  const [tasks, setTasks] = useState(() =>
-    loadData("buddyspace_tasks", defaultTasks)
-  );
+  const [tasks, setTasks] = useState(defaultTasks);
 
-  const [assignments, setAssignments] = useState(() =>
-    loadData("buddyspace_assignments", defaultAssignments)
-  );
+  const [assignments, setAssignments] = useState(defaultAssignments);
 
-  const [skills, setSkills] = useState(() =>
-    loadData("buddyspace_skills", defaultSkills)
-  );
+  const [skills, setSkills] = useState(defaultSkills);
 
-  const [goals, setGoals] = useState(() =>
-    loadData("buddyspace_goals", defaultGoals)
-  );
+  const [goals, setGoals] = useState(defaultGoals);
 
-  const [notes, setNotes] = useState(() =>
-    loadData("buddyspace_notes", defaultNotes)
-  );
+  const [notes, setNotes] = useState(defaultNotes);
 
-  const [focusHistory, setFocusHistory] = useState(() =>
-    loadData("buddyspace_focus", defaultFocus)
-  );
+  const [focusHistory, setFocusHistory] = useState(defaultFocus);
 
-  async function syncNotesFromAppwrite(userId) {
+  function mapTaskDocument(doc) {
+    return {
+      id: doc.$id,
+      title: doc.title,
+      category: doc.category || "College",
+      priority: doc.priority || "Medium",
+      deadline: doc.deadline || today,
+      estTime: Number(doc.estTime) || 30,
+      notes: doc.notes || "",
+      status: doc.status || "Pending",
+    };
+  }
+
+  function mapAssignmentDocument(doc) {
+    return {
+      id: doc.$id,
+      subject: doc.subject || "College",
+      title: doc.title,
+      description: doc.description || "",
+      dueDate: doc.dueDate || today,
+      progress: Number(doc.progress) || 0,
+      status: doc.status || "Not Started",
+    };
+  }
+
+  function mapSkillDocument(doc) {
+    return {
+      id: doc.$id,
+      name: doc.name || "Untitled skill",
+      category: doc.category || "Programming",
+      notes: doc.notes || "",
+      videos: Array.isArray(doc.videos)
+        ? doc.videos.map((video) => ({
+            id: video.id || createId(),
+            title: video.title || "Untitled lesson",
+            videoId: video.videoId || "",
+            watched: Boolean(video.watched),
+            notes: video.notes || "",
+          }))
+        : [],
+    };
+  }
+
+  function mapGoalDocument(doc) {
+    return {
+      id: doc.$id,
+      title: doc.title,
+      timeframe: doc.timeframe || "Weekly",
+      category: doc.category || "Growth",
+      progress: Number(doc.progress) || 0,
+      targetDate: doc.targetDate || today,
+    };
+  }
+
+  function mapFocusDocument(doc) {
+    return {
+      id: doc.$id,
+      date: doc.date || today,
+      duration: Number(doc.duration) || 0,
+      task: doc.task || "General Study",
+    };
+  }
+
+  function mapNoteDocument(doc) {
+    return {
+      id: doc.$id,
+      title: doc.title,
+      content: doc.content,
+      category: doc.category || "Journal",
+      date: doc.date || today,
+    };
+  }
+
+  async function syncUserDataFromAppwrite(userId) {
     if (!isAppwriteConfigured || !userId) return;
 
     try {
-      const response = await databases.listDocuments(
+      const [tasksResponse, assignmentsResponse, skillsResponse, goalsResponse, focusResponse, notesResponse] =
+        await Promise.all([
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_TASKS_COLLECTION_ID, [Query.equal("userId", userId)]),
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_ASSIGNMENTS_COLLECTION_ID, [Query.equal("userId", userId)]),
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_SKILLS_COLLECTION_ID, [Query.equal("userId", userId)]),
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_GOALS_COLLECTION_ID, [Query.equal("userId", userId)]),
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_FOCUS_COLLECTION_ID, [Query.equal("userId", userId)]),
+          databases.listDocuments(APPWRITE_DATABASE_ID, APPWRITE_NOTES_COLLECTION_ID, [Query.equal("userId", userId)]),
+        ]);
+
+      setTasks(tasksResponse.documents.map(mapTaskDocument));
+      setAssignments(assignmentsResponse.documents.map(mapAssignmentDocument));
+      setSkills(skillsResponse.documents.map(mapSkillDocument));
+      setGoals(goalsResponse.documents.map(mapGoalDocument));
+      setFocusHistory(focusResponse.documents.map(mapFocusDocument));
+      setNotes(notesResponse.documents.map(mapNoteDocument));
+    } catch (error) {
+      console.error("Failed to load Appwrite data:", error);
+    }
+  }
+
+  async function migrateLegacyData(userId) {
+    if (!isAppwriteConfigured || !userId) return;
+
+    const migrationMap = [
+      {
+        key: "buddyspace_tasks",
+        collectionId: APPWRITE_TASKS_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          title: item.title,
+          category: item.category || "College",
+          priority: item.priority || "Medium",
+          deadline: item.deadline || today,
+          estTime: Number(item.estTime) || 30,
+          notes: item.notes || "",
+          status: item.status || "Pending",
+        }),
+      },
+      {
+        key: "buddyspace_assignments",
+        collectionId: APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          subject: item.subject || "College",
+          title: item.title,
+          description: item.description || "",
+          dueDate: item.dueDate || today,
+          progress: Number(item.progress) || 0,
+          status: item.status || "Not Started",
+        }),
+      },
+      {
+        key: "buddyspace_skills",
+        collectionId: APPWRITE_SKILLS_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          name: item.name || "Untitled skill",
+          category: item.category || "Programming",
+          notes: item.notes || "",
+          videos: Array.isArray(item.videos) ? item.videos : [],
+        }),
+      },
+      {
+        key: "buddyspace_goals",
+        collectionId: APPWRITE_GOALS_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          title: item.title,
+          timeframe: item.timeframe || "Weekly",
+          category: item.category || "Growth",
+          progress: Number(item.progress) || 0,
+          targetDate: item.targetDate || today,
+        }),
+      },
+      {
+        key: "buddyspace_focus",
+        collectionId: APPWRITE_FOCUS_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          date: item.date || today,
+          duration: Number(item.duration) || 0,
+          task: item.task || "General Study",
+        }),
+      },
+      {
+        key: "buddyspace_notes",
+        collectionId: APPWRITE_NOTES_COLLECTION_ID,
+        mapper: (item) => ({
+          userId,
+          title: item.title,
+          content: item.content,
+          category: item.category || "Journal",
+          date: item.date || today,
+        }),
+      },
+    ];
+
+    for (const migration of migrationMap) {
+      try {
+        const existing = await databases.listDocuments(APPWRITE_DATABASE_ID, migration.collectionId, [
+          Query.equal("userId", userId),
+        ]);
+
+        if (existing.documents.length > 0) {
+          continue;
+        }
+
+        const raw = localStorage.getItem(migration.key);
+        if (!raw) continue;
+
+        const parsed = JSON.parse(raw);
+        const rows = Array.isArray(parsed) ? parsed : [];
+
+        for (const item of rows) {
+          await databases.createDocument(
+            APPWRITE_DATABASE_ID,
+            migration.collectionId,
+            ID.unique(),
+            migration.mapper(item)
+          );
+        }
+
+        localStorage.removeItem(migration.key);
+      } catch (error) {
+        console.error(`Failed to migrate ${migration.key}:`, error);
+      }
+    }
+  }
+
+  async function saveFocusSession(entry) {
+    if (!isAppwriteConfigured || !authUser) return;
+
+    try {
+      const created = await databases.createDocument(
         APPWRITE_DATABASE_ID,
-        APPWRITE_NOTES_COLLECTION_ID,
-        [Query.equal("userId", userId)]
+        APPWRITE_FOCUS_COLLECTION_ID,
+        ID.unique(),
+        {
+          userId: authUser.$id,
+          date: entry.date,
+          duration: Number(entry.duration) || 0,
+          task: entry.task || "General Study",
+        }
       );
 
-      const appwriteNotes = response.documents.map((doc) => ({
-        id: doc.$id,
-        title: doc.title,
-        content: doc.content,
-        category: doc.category || "Journal",
-        date: doc.date || today,
-      }));
-
-      setNotes(appwriteNotes);
+      setFocusHistory((items) => [mapFocusDocument(created), ...items]);
     } catch (error) {
-      console.error("Failed to load Appwrite notes:", error);
+      console.error("Failed to save focus session:", error);
     }
   }
 
@@ -379,7 +577,8 @@ export default function App() {
       setIsAuthenticated(true);
       setUserName(currentUser.name || authForm.name || "BuddySpace User");
       localStorage.setItem("buddyspace_user", currentUser.name || authForm.name || "BuddySpace User");
-      await syncNotesFromAppwrite(currentUser.$id);
+      await migrateLegacyData(currentUser.$id);
+      await syncUserDataFromAppwrite(currentUser.$id);
     } catch (error) {
       setAuthError(error.message || "Authentication failed.");
     }
@@ -407,11 +606,12 @@ export default function App() {
     }
 
     account.get()
-      .then((currentUser) => {
+      .then(async (currentUser) => {
         setAuthUser(currentUser);
         setUserName(currentUser.name || userName);
         setIsAuthenticated(true);
-        return syncNotesFromAppwrite(currentUser.$id);
+        await migrateLegacyData(currentUser.$id);
+        await syncUserDataFromAppwrite(currentUser.$id);
       })
       .catch(() => {
         setIsAuthenticated(false);
@@ -421,30 +621,6 @@ export default function App() {
   /* =========================================================
      SAVE DATA
   ========================================================= */
-
-  useEffect(() => {
-    saveData("buddyspace_tasks", tasks);
-  }, [tasks]);
-
-  useEffect(() => {
-    saveData("buddyspace_assignments", assignments);
-  }, [assignments]);
-
-  useEffect(() => {
-    saveData("buddyspace_skills", skills);
-  }, [skills]);
-
-  useEffect(() => {
-    saveData("buddyspace_goals", goals);
-  }, [goals]);
-
-  useEffect(() => {
-    saveData("buddyspace_notes", notes);
-  }, [notes]);
-
-  useEffect(() => {
-    saveData("buddyspace_focus", focusHistory);
-  }, [focusHistory]);
 
   useEffect(() => {
     localStorage.setItem("buddyspace_user", userName);
@@ -638,13 +814,12 @@ export default function App() {
     openPanel("task");
   }
 
-  function submitTask(event) {
+  async function submitTask(event) {
     event.preventDefault();
 
     if (!taskForm.title.trim()) return;
 
     const newTask = {
-      id: createId(),
       title: taskForm.title.trim(),
       category: taskForm.category,
       priority: taskForm.priority,
@@ -654,25 +829,82 @@ export default function App() {
       status: "Pending",
     };
 
-    setTasks((items) => [newTask, ...items]);
+    if (isAppwriteConfigured && authUser) {
+      try {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_TASKS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            ...newTask,
+          }
+        );
+
+        setTasks((items) => [mapTaskDocument(created), ...items]);
+        closePanel();
+        return;
+      } catch (error) {
+        console.error("Failed to save task to Appwrite:", error);
+      }
+    }
+
+    setTasks((items) => [
+      { id: createId(), ...newTask },
+      ...items,
+    ]);
     closePanel();
   }
 
-  function toggleTask(id) {
+  async function toggleTask(id) {
+    const current = tasks.find((task) => task.id === id);
+    if (!current) return;
+
+    const nextStatus = current.status === "Completed" ? "Pending" : "Completed";
+
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_TASKS_COLLECTION_ID,
+          id,
+          { status: nextStatus }
+        );
+
+        setTasks((items) =>
+          items.map((task) => (task.id === id ? mapTaskDocument(updated) : task))
+        );
+        return;
+      } catch (error) {
+        console.error("Failed to update task in Appwrite:", error);
+      }
+    }
+
     setTasks((items) =>
       items.map((task) =>
         task.id === id
           ? {
               ...task,
-              status:
-                task.status === "Completed" ? "Pending" : "Completed",
+              status: nextStatus,
             }
           : task
       )
     );
   }
 
-  function deleteTask(id) {
+  async function deleteTask(id) {
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        await databases.deleteDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_TASKS_COLLECTION_ID,
+          id
+        );
+      } catch (error) {
+        console.error("Failed to delete task from Appwrite:", error);
+      }
+    }
+
     setTasks((items) => items.filter((task) => task.id !== id));
   }
 
@@ -684,13 +916,12 @@ export default function App() {
     openPanel("assignment");
   }
 
-  function submitAssignment(event) {
+  async function submitAssignment(event) {
     event.preventDefault();
 
     if (!assignmentForm.title.trim()) return;
 
     const newAssignment = {
-      id: createId(),
       subject: assignmentForm.subject.trim() || "College",
       title: assignmentForm.title.trim(),
       description: assignmentForm.description.trim(),
@@ -699,30 +930,87 @@ export default function App() {
       status: "Not Started",
     };
 
-    setAssignments((items) => [...items, newAssignment]);
+    if (isAppwriteConfigured && authUser) {
+      try {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            ...newAssignment,
+          }
+        );
+
+        setAssignments((items) => [...items, mapAssignmentDocument(created)]);
+        closePanel();
+        return;
+      } catch (error) {
+        console.error("Failed to save assignment to Appwrite:", error);
+      }
+    }
+
+    setAssignments((items) => [...items, { id: createId(), ...newAssignment }]);
     closePanel();
   }
 
-  function increaseAssignmentProgress(id) {
+  async function increaseAssignmentProgress(id) {
+    const current = assignments.find((assignment) => assignment.id === id);
+    if (!current) return;
+
+    const progress = Math.min(100, current.progress + 25);
+    const nextStatus = progress === 100 ? "Completed" : "In Progress";
+
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+          id,
+          {
+            progress,
+            status: nextStatus,
+          }
+        );
+
+        setAssignments((items) =>
+          items.map((assignment) =>
+            assignment.id === id ? mapAssignmentDocument(updated) : assignment
+          )
+        );
+        return;
+      } catch (error) {
+        console.error("Failed to update assignment in Appwrite:", error);
+      }
+    }
+
     setAssignments((items) =>
       items.map((assignment) => {
         if (assignment.id !== id) return assignment;
 
-        const progress = Math.min(100, assignment.progress + 25);
-
         return {
           ...assignment,
           progress,
-          status: progress === 100 ? "Completed" : "In Progress",
+          status: nextStatus,
         };
       })
     );
   }
 
-  function deleteAssignment(id) {
-    setAssignments((items) =>
-      items.filter((assignment) => assignment.id !== id)
-    );
+  async function deleteAssignment(id) {
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        await databases.deleteDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+          id
+        );
+      } catch (error) {
+        console.error("Failed to delete assignment from Appwrite:", error);
+      }
+    }
+
+    setAssignments((items) => items.filter((assignment) => assignment.id !== id));
   }
 
   /* =========================================================
@@ -733,19 +1021,43 @@ export default function App() {
     openPanel("skill");
   }
 
-  function submitSkill(event) {
+  async function submitSkill(event) {
     event.preventDefault();
 
     if (!skillForm.name.trim()) return;
+
+    const nextSkill = {
+      name: skillForm.name.trim(),
+      category: skillForm.category,
+      notes: skillForm.notes.trim(),
+      videos: [],
+    };
+
+    if (isAppwriteConfigured && authUser) {
+      try {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            ...nextSkill,
+          }
+        );
+
+        setSkills((items) => [...items, mapSkillDocument(created)]);
+        closePanel();
+        return;
+      } catch (error) {
+        console.error("Failed to save skill to Appwrite:", error);
+      }
+    }
 
     setSkills((items) => [
       ...items,
       {
         id: createId(),
-        name: skillForm.name.trim(),
-        category: skillForm.category,
-        notes: skillForm.notes.trim(),
-        videos: [],
+        ...nextSkill,
       },
     ]);
     closePanel();
@@ -773,38 +1085,112 @@ export default function App() {
       title: title.trim(),
       videoId,
       watched: false,
+      notes: "",
+    };
+
+    const skill = skills.find((item) => item.id === skillId);
+    if (!skill) return;
+
+    const updatedSkill = {
+      ...skill,
+      videos: [...skill.videos, video],
+    };
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      databases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SKILLS_COLLECTION_ID,
+        skillId,
+        {
+          videos: updatedSkill.videos,
+        }
+      )
+        .then((updated) => {
+          setSkills((items) =>
+            items.map((item) => (item.id === skillId ? mapSkillDocument(updated) : item))
+          );
+        })
+        .catch((error) => {
+          console.error("Failed to update skill video list in Appwrite:", error);
+          setSkills((items) =>
+            items.map((item) => (item.id === skillId ? updatedSkill : item))
+          );
+        });
+      return;
+    }
+
+    setSkills((items) =>
+      items.map((item) => (item.id === skillId ? updatedSkill : item))
+    );
+  }
+
+  function updateVideoNotes(skillId, videoId, value) {
+    const skill = skills.find((item) => item.id === skillId);
+    if (!skill) return;
+
+    const updatedSkill = {
+      ...skill,
+      videos: skill.videos.map((video) =>
+        video.id === videoId ? { ...video, notes: value } : video
+      ),
     };
 
     setSkills((items) =>
-      items.map((skill) =>
-        skill.id === skillId
-          ? {
-              ...skill,
-              videos: [...skill.videos, video],
-            }
-          : skill
-      )
+      items.map((item) => (item.id === skillId ? updatedSkill : item))
     );
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      databases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SKILLS_COLLECTION_ID,
+        skillId,
+        { videos: updatedSkill.videos }
+      ).catch((error) => {
+        console.error("Failed to save video notes to Appwrite:", error);
+      });
+    }
   }
 
   function toggleVideo(skillId, videoId) {
+    const skill = skills.find((item) => item.id === skillId);
+    if (!skill) return;
+
+    const updatedSkill = {
+      ...skill,
+      videos: skill.videos.map((video) =>
+        video.id === videoId ? { ...video, watched: !video.watched } : video
+      ),
+    };
+
     setSkills((items) =>
-      items.map((skill) =>
-        skill.id === skillId
-          ? {
-              ...skill,
-              videos: skill.videos.map((video) =>
-                video.id === videoId
-                  ? { ...video, watched: !video.watched }
-                  : video
-              ),
-            }
-          : skill
-      )
+      items.map((item) => (item.id === skillId ? updatedSkill : item))
     );
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      databases.updateDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_SKILLS_COLLECTION_ID,
+        skillId,
+        { videos: updatedSkill.videos }
+      ).catch((error) => {
+        console.error("Failed to update video watched status in Appwrite:", error);
+      });
+    }
   }
 
-  function deleteSkill(skillId) {
+  async function deleteSkill(skillId) {
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      try {
+        await databases.deleteDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          skillId
+        );
+      } catch (error) {
+        console.error("Failed to delete skill from Appwrite:", error);
+      }
+    }
+
     setSkills((items) => items.filter((skill) => skill.id !== skillId));
   }
 
@@ -816,39 +1202,98 @@ export default function App() {
     openPanel("goal");
   }
 
-  function submitGoal(event) {
+  async function submitGoal(event) {
     event.preventDefault();
 
     if (!goalForm.title.trim()) return;
+
+    const newGoal = {
+      title: goalForm.title.trim(),
+      timeframe: goalForm.timeframe,
+      category: goalForm.category,
+      progress: Number(goalForm.progress) || 0,
+      targetDate: goalForm.targetDate || today,
+    };
+
+    if (isAppwriteConfigured && authUser) {
+      try {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_GOALS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            ...newGoal,
+          }
+        );
+
+        setGoals((items) => [mapGoalDocument(created), ...items]);
+        closePanel();
+        return;
+      } catch (error) {
+        console.error("Failed to save goal to Appwrite:", error);
+      }
+    }
 
     setGoals((items) => [
       ...items,
       {
         id: createId(),
-        title: goalForm.title.trim(),
-        timeframe: goalForm.timeframe,
-        category: goalForm.category,
-        progress: Number(goalForm.progress) || 0,
-        targetDate: goalForm.targetDate || today,
+        ...newGoal,
       },
     ]);
     closePanel();
   }
 
-  function increaseGoal(id) {
+  async function increaseGoal(id) {
+    const current = goals.find((goal) => goal.id === id);
+    if (!current) return;
+
+    const progress = Math.min(100, current.progress + 10);
+
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_GOALS_COLLECTION_ID,
+          id,
+          { progress }
+        );
+
+        setGoals((items) =>
+          items.map((goal) => (goal.id === id ? mapGoalDocument(updated) : goal))
+        );
+        return;
+      } catch (error) {
+        console.error("Failed to update goal in Appwrite:", error);
+      }
+    }
+
     setGoals((items) =>
       items.map((goal) =>
         goal.id === id
           ? {
               ...goal,
-              progress: Math.min(100, goal.progress + 10),
+              progress,
             }
           : goal
       )
     );
   }
 
-  function deleteGoal(id) {
+  async function deleteGoal(id) {
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      try {
+        await databases.deleteDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_GOALS_COLLECTION_ID,
+          id
+        );
+      } catch (error) {
+        console.error("Failed to delete goal from Appwrite:", error);
+      }
+    }
+
     setGoals((items) => items.filter((goal) => goal.id !== id));
   }
 
@@ -866,7 +1311,6 @@ export default function App() {
     if (!noteForm.title.trim() || !noteForm.content.trim()) return;
 
     const notePayload = {
-      id: createId(),
       title: noteForm.title.trim(),
       content: noteForm.content.trim(),
       category: noteForm.category,
@@ -875,24 +1319,25 @@ export default function App() {
 
     if (isAppwriteConfigured && authUser) {
       try {
-        await databases.createDocument(
+        const created = await databases.createDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_NOTES_COLLECTION_ID,
           ID.unique(),
           {
             userId: authUser.$id,
-            title: notePayload.title,
-            content: notePayload.content,
-            category: notePayload.category,
-            date: today,
+            ...notePayload,
           }
         );
+
+        setNotes((items) => [mapNoteDocument(created), ...items]);
+        closePanel();
+        return;
       } catch (error) {
         console.error("Failed to save note to Appwrite:", error);
       }
     }
 
-    setNotes((items) => [notePayload, ...items]);
+    setNotes((items) => [{ id: createId(), ...notePayload }, ...items]);
     closePanel();
   }
 
@@ -1138,6 +1583,7 @@ export default function App() {
               addSkill={addSkill}
               addYouTubeVideo={addYouTubeVideo}
               toggleVideo={toggleVideo}
+              updateVideoNotes={updateVideoNotes}
               deleteSkill={deleteSkill}
             />
           )}
@@ -1557,6 +2003,7 @@ function SkillsPage({
   addSkill,
   addYouTubeVideo,
   toggleVideo,
+  updateVideoNotes,
   deleteSkill,
 }) {
   return (
@@ -1638,13 +2085,29 @@ function SkillsPage({
                     </button>
                   </div>
 
-                  <div className="youtube-frame">
-                    <iframe
-                      src={`https://www.youtube.com/embed/${video.videoId}`}
-                      title={video.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
+                  <div className="video-content">
+                    <div className="youtube-frame">
+                      <iframe
+                        src={`https://www.youtube.com/embed/${video.videoId}`}
+                        title={video.title}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+
+                    <div className="video-notes">
+                      <label htmlFor={`video-notes-${video.id}`}>
+                        Notes
+                      </label>
+                      <textarea
+                        id={`video-notes-${video.id}`}
+                        value={video.notes || ""}
+                        onChange={(event) =>
+                          updateVideoNotes(skill.id, video.id, event.target.value)
+                        }
+                        placeholder="Write key takeaways while watching..."
+                      />
+                    </div>
                   </div>
                 </div>
               ))}

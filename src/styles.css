@@ -1430,6 +1430,13 @@ select:focus-visible {
   font-size: 11px;
 }
 
+.video-content {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 12px;
+  align-items: start;
+}
+
 .watch-button {
   flex: 0 0 auto;
 
@@ -1465,6 +1472,38 @@ select:focus-visible {
   height: 100%;
 
   border: 0;
+}
+
+.video-notes {
+  display: grid;
+  gap: 7px;
+  min-height: 100%;
+}
+
+.video-notes label {
+  color: var(--brown);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.video-notes textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  padding: 10px 11px;
+  border: 1px solid #f0e5dc;
+  border-radius: 12px;
+  background: #fffdfb;
+  color: var(--brown);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.video-notes textarea:focus {
+  outline: none;
+  border-color: rgba(132, 94, 194, 0.7);
+  box-shadow: 0 0 0 3px rgba(132, 94, 194, 0.08);
 }
 
 .empty-video {
@@ -1931,6 +1970,10 @@ select:focus-visible {
   }
 
   .video-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .video-content {
     grid-template-columns: 1fr;
   }
 }
