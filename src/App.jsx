@@ -58,6 +58,70 @@ function createId() {
   return Date.now() + Math.floor(Math.random() * 1000);
 }
 
+function normalizeVideoItem(video) {
+  if (!video) return null;
+
+  if (typeof video === "string") {
+    try {
+      const parsed = JSON.parse(video);
+      return {
+        id: parsed.id || createId(),
+        title: parsed.title || "Untitled lesson",
+        videoId: parsed.videoId || "",
+        watched: Boolean(parsed.watched),
+        notes: parsed.notes || "",
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof video === "object") {
+    return {
+      id: video.id || createId(),
+      title: video.title || "Untitled lesson",
+      videoId: video.videoId || "",
+      watched: Boolean(video.watched),
+      notes: video.notes || "",
+    };
+  }
+
+  return null;
+}
+
+function mapVideosFromDocument(videos) {
+  if (!Array.isArray(videos)) return [];
+
+  return videos
+    .map(normalizeVideoItem)
+    .filter(Boolean);
+}
+
+function encodeVideosForAppwrite(videos) {
+  if (!Array.isArray(videos)) return [];
+
+  return videos.map((video) =>
+    JSON.stringify({
+      id: video.id || createId(),
+      title: video.title || "Untitled lesson",
+      videoId: video.videoId || "",
+      watched: Boolean(video.watched),
+      notes: video.notes || "",
+    })
+  );
+}
+
+function isProgressSchemaMissing(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  return (
+    message.includes('unknown attribute: "progress"') ||
+    message.includes("unknown attribute: 'progress'") ||
+    (message.includes("invalid document structure") &&
+      message.includes("progress"))
+  );
+}
+
 function loadData(key, fallback) {
   try {
     const saved = localStorage.getItem(key);
@@ -75,7 +139,10 @@ function getYouTubeId(url) {
   if (!url) return "";
 
   try {
-    const parsed = new URL(url);
+    const normalized = /^https?:\/\//i.test(url.trim())
+      ? url.trim()
+      : `https://${url.trim()}`;
+    const parsed = new URL(normalized);
 
     if (parsed.hostname.includes("youtu.be")) {
       return parsed.pathname.replace("/", "").split("?")[0];
@@ -188,6 +255,7 @@ const defaultSkills = [
     name: "Python",
     category: "Programming",
     notes: "Learn Python from basics to projects.",
+    progress: 0,
     videos: [],
   },
   {
@@ -195,6 +263,7 @@ const defaultSkills = [
     name: "Web Development",
     category: "Development",
     notes: "HTML, CSS, JavaScript and React.",
+    progress: 0,
     videos: [],
   },
 ];
@@ -261,6 +330,15 @@ function createSkillDraft() {
   };
 }
 
+function createVideoDraft(skillId = "") {
+  return {
+    skillId,
+    title: "",
+    url: "",
+    notes: "",
+  };
+}
+
 function createGoalDraft() {
   return {
     title: "",
@@ -290,8 +368,10 @@ export default function App() {
   const [taskForm, setTaskForm] = useState(createTaskDraft());
   const [assignmentForm, setAssignmentForm] = useState(createAssignmentDraft());
   const [skillForm, setSkillForm] = useState(createSkillDraft());
+  const [videoForm, setVideoForm] = useState(createVideoDraft());
   const [goalForm, setGoalForm] = useState(createGoalDraft());
   const [noteForm, setNoteForm] = useState(createNoteDraft());
+  const [panelError, setPanelError] = useState("");
   const [authMode, setAuthMode] = useState("login");
   const [authForm, setAuthForm] = useState({
     name: "",
@@ -299,6 +379,8 @@ export default function App() {
     password: "",
   });
   const [authError, setAuthError] = useState("");
+  const [reviewStatus, setReviewStatus] = useState("");
+  const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState(null);
 
@@ -310,7 +392,9 @@ export default function App() {
 
   const [assignments, setAssignments] = useState(defaultAssignments);
 
-  const [skills, setSkills] = useState(defaultSkills);
+  const [skills, setSkills] = useState(
+    loadData("buddyspace_skills", defaultSkills)
+  );
 
   const [goals, setGoals] = useState(defaultGoals);
 
@@ -349,15 +433,8 @@ export default function App() {
       name: doc.name || "Untitled skill",
       category: doc.category || "Programming",
       notes: doc.notes || "",
-      videos: Array.isArray(doc.videos)
-        ? doc.videos.map((video) => ({
-            id: video.id || createId(),
-            title: video.title || "Untitled lesson",
-            videoId: video.videoId || "",
-            watched: Boolean(video.watched),
-            notes: video.notes || "",
-          }))
-        : [],
+      progress: Math.max(0, Math.min(100, Number(doc.progress) || 0)),
+      videos: mapVideosFromDocument(doc.videos),
     };
   }
 
@@ -407,7 +484,39 @@ export default function App() {
 
       setTasks(tasksResponse.documents.map(mapTaskDocument));
       setAssignments(assignmentsResponse.documents.map(mapAssignmentDocument));
-      setSkills(skillsResponse.documents.map(mapSkillDocument));
+      const syncedSkills = skillsResponse.documents.map(mapSkillDocument);
+      setSkills((currentSkills) =>
+        syncedSkills.length > 0
+          ? syncedSkills.map((skill) => {
+              const localMatch = currentSkills.find(
+                (item) => String(item.id) === String(skill.id)
+              );
+
+              const mergedProgress =
+                Number(skill.progress) > 0
+                  ? Number(skill.progress)
+                  : Number(localMatch?.progress) || 0;
+
+              if (
+                skill.videos.length === 0 &&
+                localMatch &&
+                Array.isArray(localMatch.videos) &&
+                localMatch.videos.length > 0
+              ) {
+                return {
+                  ...skill,
+                  progress: mergedProgress,
+                  videos: localMatch.videos,
+                };
+              }
+
+              return {
+                ...skill,
+                progress: mergedProgress,
+              };
+            })
+          : currentSkills
+      );
       setGoals(goalsResponse.documents.map(mapGoalDocument));
       setFocusHistory(focusResponse.documents.map(mapFocusDocument));
       setNotes(notesResponse.documents.map(mapNoteDocument));
@@ -455,7 +564,7 @@ export default function App() {
           name: item.name || "Untitled skill",
           category: item.category || "Programming",
           notes: item.notes || "",
-          videos: Array.isArray(item.videos) ? item.videos : [],
+          videos: encodeVideosForAppwrite(item.videos),
         }),
       },
       {
@@ -626,6 +735,10 @@ export default function App() {
     localStorage.setItem("buddyspace_user", userName);
   }, [userName]);
 
+  useEffect(() => {
+    saveData("buddyspace_skills", skills);
+  }, [skills]);
+
   /* =========================================================
      POMODORO
   ========================================================= */
@@ -792,17 +905,20 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function openPanel(type) {
+  function openPanel(type, payload = {}) {
+    setPanelError("");
     setPanelType(type);
 
     if (type === "task") setTaskForm(createTaskDraft());
     if (type === "assignment") setAssignmentForm(createAssignmentDraft());
     if (type === "skill") setSkillForm(createSkillDraft());
+    if (type === "video") setVideoForm(createVideoDraft(payload.skillId || ""));
     if (type === "goal") setGoalForm(createGoalDraft());
     if (type === "note") setNoteForm(createNoteDraft());
   }
 
   function closePanel() {
+    setPanelError("");
     setPanelType(null);
   }
 
@@ -1030,20 +1146,46 @@ export default function App() {
       name: skillForm.name.trim(),
       category: skillForm.category,
       notes: skillForm.notes.trim(),
+      progress: 0,
       videos: [],
     };
 
     if (isAppwriteConfigured && authUser) {
       try {
-        const created = await databases.createDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_SKILLS_COLLECTION_ID,
-          ID.unique(),
-          {
-            userId: authUser.$id,
-            ...nextSkill,
+        let created;
+
+        try {
+          created = await databases.createDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_SKILLS_COLLECTION_ID,
+            ID.unique(),
+            {
+              userId: authUser.$id,
+              ...nextSkill,
+            }
+          );
+        } catch (error) {
+          if (!isProgressSchemaMissing(error)) {
+            throw error;
           }
-        );
+
+          created = await databases.createDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_SKILLS_COLLECTION_ID,
+            ID.unique(),
+            {
+              userId: authUser.$id,
+              name: nextSkill.name,
+              category: nextSkill.category,
+              notes: nextSkill.notes,
+              videos: [],
+            }
+          );
+
+          setSkillStatus(
+            "Skill saved. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+          );
+        }
 
         setSkills((items) => [...items, mapSkillDocument(created)]);
         closePanel();
@@ -1064,64 +1206,168 @@ export default function App() {
   }
 
   function addYouTubeVideo(skillId) {
-    const title = window.prompt("Video title:");
+    setSkillStatus("");
+    openPanel("video", { skillId });
+  }
 
-    if (!title?.trim()) return;
+  async function increaseSkillProgress(skillId) {
+    const skill = skills.find((item) => item.id === skillId);
+    if (!skill) return;
 
-    const url = window.prompt(
-      "Paste YouTube URL:",
-      "https://www.youtube.com/watch?v="
+    const nextProgress = Math.min(100, (Number(skill.progress) || 0) + 10);
+
+    if (nextProgress === Number(skill.progress || 0)) {
+      setSkillStatus(`${skill.name} is already at 100%.`);
+      return;
+    }
+
+    const updatedSkill = {
+      ...skill,
+      progress: nextProgress,
+    };
+
+    setSkills((items) =>
+      items.map((item) => (item.id === skillId ? updatedSkill : item))
     );
+    setSkillStatus(`Progress updated for ${skill.name}.`);
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          skillId,
+          { progress: nextProgress }
+        );
+
+        setSkills((items) =>
+          items.map((item) =>
+            item.id === skillId ? mapSkillDocument(updated) : item
+          )
+        );
+      } catch (error) {
+        if (isProgressSchemaMissing(error)) {
+          setSkillStatus(
+            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+          );
+        } else {
+          console.error("Failed to increase skill progress in Appwrite:", error);
+        }
+      }
+    }
+  }
+
+  async function undoSkillProgress(skillId) {
+    const skill = skills.find((item) => item.id === skillId);
+    if (!skill) return;
+
+    const nextProgress = Math.max(0, (Number(skill.progress) || 0) - 10);
+
+    if (nextProgress === Number(skill.progress || 0)) {
+      setSkillStatus(`${skill.name} is already at 0%.`);
+      return;
+    }
+
+    const updatedSkill = {
+      ...skill,
+      progress: nextProgress,
+    };
+
+    setSkills((items) =>
+      items.map((item) => (item.id === skillId ? updatedSkill : item))
+    );
+    setSkillStatus(`Progress updated for ${skill.name}.`);
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          skillId,
+          { progress: nextProgress }
+        );
+
+        setSkills((items) =>
+          items.map((item) =>
+            item.id === skillId ? mapSkillDocument(updated) : item
+          )
+        );
+      } catch (error) {
+        if (isProgressSchemaMissing(error)) {
+          setSkillStatus(
+            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+          );
+        } else {
+          console.error("Failed to undo skill progress in Appwrite:", error);
+        }
+      }
+    }
+  }
+
+  async function submitVideo(event) {
+    event.preventDefault();
+
+    const title = videoForm.title.trim();
+    const url = videoForm.url.trim();
+
+    if (!title) {
+      setPanelError("Please enter a video title.");
+      return;
+    }
 
     const videoId = getYouTubeId(url);
-
     if (!videoId) {
-      window.alert("Please enter a valid YouTube URL.");
+      setPanelError("Please enter a valid YouTube URL.");
       return;
     }
 
     const video = {
       id: createId(),
-      title: title.trim(),
+      title,
       videoId,
       watched: false,
-      notes: "",
+      notes: videoForm.notes.trim(),
     };
 
+    const skillId = videoForm.skillId;
+
     const skill = skills.find((item) => item.id === skillId);
-    if (!skill) return;
+    if (!skill) {
+      setPanelError("Skill not found. Please try again.");
+      return;
+    }
 
     const updatedSkill = {
       ...skill,
       videos: [...skill.videos, video],
     };
 
-    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
-      databases.updateDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_SKILLS_COLLECTION_ID,
-        skillId,
-        {
-          videos: updatedSkill.videos,
-        }
-      )
-        .then((updated) => {
-          setSkills((items) =>
-            items.map((item) => (item.id === skillId ? mapSkillDocument(updated) : item))
-          );
-        })
-        .catch((error) => {
-          console.error("Failed to update skill video list in Appwrite:", error);
-          setSkills((items) =>
-            items.map((item) => (item.id === skillId ? updatedSkill : item))
-          );
-        });
-      return;
-    }
-
     setSkills((items) =>
       items.map((item) => (item.id === skillId ? updatedSkill : item))
     );
+
+    closePanel();
+
+    if (isAppwriteConfigured && authUser && typeof skillId === "string") {
+      try {
+        const updated = await databases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          skillId,
+          {
+            videos: encodeVideosForAppwrite(updatedSkill.videos),
+          }
+        );
+
+        setSkills((items) =>
+          items.map((item) =>
+            item.id === skillId ? mapSkillDocument(updated) : item
+          )
+        );
+      } catch (error) {
+        console.error("Failed to update skill video list in Appwrite:", error);
+      }
+    }
   }
 
   function updateVideoNotes(skillId, videoId, value) {
@@ -1144,7 +1390,7 @@ export default function App() {
         APPWRITE_DATABASE_ID,
         APPWRITE_SKILLS_COLLECTION_ID,
         skillId,
-        { videos: updatedSkill.videos }
+        { videos: encodeVideosForAppwrite(updatedSkill.videos) }
       ).catch((error) => {
         console.error("Failed to save video notes to Appwrite:", error);
       });
@@ -1171,7 +1417,7 @@ export default function App() {
         APPWRITE_DATABASE_ID,
         APPWRITE_SKILLS_COLLECTION_ID,
         skillId,
-        { videos: updatedSkill.videos }
+        { videos: encodeVideosForAppwrite(updatedSkill.videos) }
       ).catch((error) => {
         console.error("Failed to update video watched status in Appwrite:", error);
       });
@@ -1363,6 +1609,59 @@ export default function App() {
     }
   }
 
+  async function completeTodayReview() {
+    const title = `Daily Review - ${today}`;
+    const existingReview = notes.find(
+      (note) => note.title === title && note.category === "Reflection"
+    );
+
+    const unfinishedCount = tasks.filter(
+      (task) => task.status !== "Completed"
+    ).length;
+
+    const content = [
+      `Completed tasks: ${completedTasks}`,
+      `Focus minutes: ${focusMinutes}`,
+      `Videos watched: ${watchedVideos}`,
+      `Carry forward tasks: ${unfinishedCount}`,
+    ].join("\n");
+
+    const notePayload = {
+      title,
+      content,
+      category: "Reflection",
+      date: today,
+    };
+
+    if (existingReview) {
+      setReviewStatus("Today's review is already saved.");
+      return;
+    }
+
+    if (isAppwriteConfigured && authUser) {
+      try {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_NOTES_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            ...notePayload,
+          }
+        );
+
+        setNotes((items) => [mapNoteDocument(created), ...items]);
+        setReviewStatus("Today's review has been saved.");
+        return;
+      } catch (error) {
+        console.error("Failed to save daily review:", error);
+      }
+    }
+
+    setNotes((items) => [{ id: createId(), ...notePayload }, ...items]);
+    setReviewStatus("Today's review has been saved locally.");
+  }
+
   /* =========================================================
      PAGE TITLE
   ========================================================= */
@@ -1545,10 +1844,13 @@ export default function App() {
               setAssignmentForm={setAssignmentForm}
               skillForm={skillForm}
               setSkillForm={setSkillForm}
+              videoForm={videoForm}
+              setVideoForm={setVideoForm}
               goalForm={goalForm}
               setGoalForm={setGoalForm}
               noteForm={noteForm}
               setNoteForm={setNoteForm}
+              panelError={panelError}
               onClose={closePanel}
               onSubmit={
                 panelType === "task"
@@ -1557,6 +1859,8 @@ export default function App() {
                     ? submitAssignment
                     : panelType === "skill"
                       ? submitSkill
+                      : panelType === "video"
+                        ? submitVideo
                       : panelType === "goal"
                         ? submitGoal
                         : submitNote
@@ -1580,8 +1884,11 @@ export default function App() {
           {activePage === "skills" && (
             <SkillsPage
               skills={skills}
+              skillStatus={skillStatus}
               addSkill={addSkill}
               addYouTubeVideo={addYouTubeVideo}
+              increaseSkillProgress={increaseSkillProgress}
+              undoSkillProgress={undoSkillProgress}
               toggleVideo={toggleVideo}
               updateVideoNotes={updateVideoNotes}
               deleteSkill={deleteSkill}
@@ -1657,6 +1964,8 @@ export default function App() {
               completedTasks={completedTasks}
               focusMinutes={focusMinutes}
               watchedVideos={watchedVideos}
+              reviewStatus={reviewStatus}
+              onCompleteReview={completeTodayReview}
             />
           )}
         </div>
@@ -2000,8 +2309,11 @@ function AssignmentsPage({
 
 function SkillsPage({
   skills,
+  skillStatus,
   addSkill,
   addYouTubeVideo,
+  increaseSkillProgress,
+  undoSkillProgress,
   toggleVideo,
   updateVideoNotes,
   deleteSkill,
@@ -2017,13 +2329,30 @@ function SkillsPage({
         color="purple"
       />
 
+      {skillStatus && <p className="auth-hint">{skillStatus}</p>}
+
+      {skills.length === 0 && (
+        <div className="card">
+          <EmptyState text="No skills added yet. Create one to start your learning journey." />
+        </div>
+      )}
+
       {skills.map((skill) => {
         const watched = skill.videos.filter((video) => video.watched).length;
-
-        const progress =
+        const watchedProgress =
           skill.videos.length === 0
             ? 0
             : Math.round((watched / skill.videos.length) * 100);
+
+        const progress = Math.max(
+          0,
+          Math.min(
+            100,
+            Number.isFinite(Number(skill.progress))
+              ? Number(skill.progress)
+              : watchedProgress
+          )
+        );
 
         return (
           <div className="card skill-card" key={skill.id}>
@@ -2048,6 +2377,20 @@ function SkillsPage({
                 >
                   <Youtube size={15} />
                   Add YouTube
+                </button>
+
+                <button
+                  className="small-button purple-button"
+                  onClick={() => increaseSkillProgress(skill.id)}
+                >
+                  + Progress
+                </button>
+
+                <button
+                  className="small-button"
+                  onClick={() => undoSkillProgress(skill.id)}
+                >
+                  Undo -10%
                 </button>
 
                 <button
@@ -2569,6 +2912,8 @@ function ReviewPage({
   completedTasks,
   focusMinutes,
   watchedVideos,
+  reviewStatus,
+  onCompleteReview,
 }) {
   const unfinished = tasks.filter(
     (task) => task.status !== "Completed"
@@ -2629,7 +2974,9 @@ function ReviewPage({
           )}
         </div>
 
-        <button className="dark-button large">
+        {reviewStatus && <p className="auth-hint">{reviewStatus}</p>}
+
+        <button className="dark-button large" onClick={onCompleteReview}>
           <Save size={17} />
           Complete today&apos;s review
         </button>
@@ -2873,16 +3220,20 @@ function CreatePanel({
   setAssignmentForm,
   skillForm,
   setSkillForm,
+  videoForm,
+  setVideoForm,
   goalForm,
   setGoalForm,
   noteForm,
   setNoteForm,
+  panelError,
   onClose,
   onSubmit,
 }) {
   const isTask = type === "task";
   const isAssignment = type === "assignment";
   const isSkill = type === "skill";
+  const isVideo = type === "video";
   const isGoal = type === "goal";
   const isNote = type === "note";
 
@@ -2893,6 +3244,8 @@ function CreatePanel({
         ? "Add Assignment"
         : isSkill
           ? "Add New Skill"
+          : isVideo
+            ? "Add YouTube Lesson"
           : isGoal
             ? "Add Goal"
             : "Add Note";
@@ -3121,6 +3474,48 @@ function CreatePanel({
             </>
           )}
 
+          {isVideo && (
+            <>
+              <label className="field-group">
+                <span>Video title</span>
+                <input
+                  type="text"
+                  value={videoForm.title}
+                  onChange={(event) =>
+                    setVideoForm({ ...videoForm, title: event.target.value })
+                  }
+                  placeholder="Lesson 1: Variables"
+                  required
+                />
+              </label>
+
+              <label className="field-group">
+                <span>YouTube URL</span>
+                <input
+                  type="url"
+                  value={videoForm.url}
+                  onChange={(event) =>
+                    setVideoForm({ ...videoForm, url: event.target.value })
+                  }
+                  placeholder="https://www.youtube.com/watch?v="
+                  required
+                />
+              </label>
+
+              <label className="field-group">
+                <span>Notes</span>
+                <textarea
+                  rows="4"
+                  value={videoForm.notes}
+                  onChange={(event) =>
+                    setVideoForm({ ...videoForm, notes: event.target.value })
+                  }
+                  placeholder="What should you focus on in this lesson?"
+                />
+              </label>
+            </>
+          )}
+
           {isGoal && (
             <>
               <label className="field-group">
@@ -3238,6 +3633,8 @@ function CreatePanel({
               </label>
             </>
           )}
+
+          {panelError && <p className="auth-error">{panelError}</p>}
 
           <div className="panel-actions">
             <button type="button" className="secondary-button" onClick={onClose}>
