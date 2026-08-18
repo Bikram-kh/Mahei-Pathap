@@ -1,0 +1,2809 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { ID } from "appwrite";
+
+import {
+  LayoutDashboard,
+  CheckSquare,
+  BookOpen,
+  GraduationCap,
+  Target,
+  CalendarDays,
+  Clock3,
+  BookMarked,
+  BarChart3,
+  Sun,
+  Plus,
+  Trash2,
+  Play,
+  Pause,
+  RotateCcw,
+  Flame,
+  Sparkles,
+  Menu,
+  X,
+  ChevronRight,
+  Search,
+  Check,
+  AlertCircle,
+  Youtube,
+  Trophy,
+  Timer,
+  Coffee,
+  Moon,
+  Save,
+  LogOut,
+} from "lucide-react";
+
+import {
+  account,
+  APPWRITE_DATABASE_ID,
+  APPWRITE_NOTES_COLLECTION_ID,
+  databases,
+  isAppwriteConfigured,
+  Query,
+} from "./lib/appwrite";
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const today = new Date().toISOString().split("T")[0];
+
+function createId() {
+  return Date.now() + Math.floor(Math.random() * 1000);
+}
+
+function loadData(key, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveData(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getYouTubeId(url) {
+  if (!url) return "";
+
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.hostname.includes("youtu.be")) {
+      return parsed.pathname.replace("/", "").split("?")[0];
+    }
+
+    if (parsed.hostname.includes("youtube.com")) {
+      const videoId = parsed.searchParams.get("v");
+
+      if (videoId) return videoId;
+
+      const parts = parsed.pathname.split("/");
+
+      const embedIndex = parts.indexOf("embed");
+      if (embedIndex !== -1 && parts[embedIndex + 1]) {
+        return parts[embedIndex + 1];
+      }
+
+      const shortsIndex = parts.indexOf("shorts");
+      if (shortsIndex !== -1 && parts[shortsIndex + 1]) {
+        return parts[shortsIndex + 1];
+      }
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function formatDate(date) {
+  if (!date) return "No date";
+
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getDaysUntil(date) {
+  if (!date) return null;
+
+  const now = new Date(`${today}T00:00:00`);
+  const target = new Date(`${date}T00:00:00`);
+
+  return Math.ceil((target - now) / 86400000);
+}
+
+/* =========================================================
+   DEFAULT DATA
+========================================================= */
+
+const defaultTasks = [
+  {
+    id: 1,
+    title: "Complete Data Structures Assignment",
+    category: "College",
+    priority: "High",
+    deadline: today,
+    estTime: 90,
+    notes: "Focus on AVL Trees and rotations.",
+    status: "Pending",
+  },
+  {
+    id: 2,
+    title: "Watch Python lesson",
+    category: "Learning",
+    priority: "Medium",
+    deadline: today,
+    estTime: 45,
+    notes: "Complete one lesson.",
+    status: "Pending",
+  },
+  {
+    id: 3,
+    title: "Practice C programming",
+    category: "Learning",
+    priority: "Low",
+    deadline: today,
+    estTime: 30,
+    notes: "Solve 3 problems.",
+    status: "Completed",
+  },
+];
+
+const defaultAssignments = [
+  {
+    id: 1,
+    subject: "Computer Science",
+    title: "Data Structures Project",
+    description: "Implement BFS and DFS.",
+    dueDate: today,
+    progress: 40,
+    status: "In Progress",
+  },
+  {
+    id: 2,
+    subject: "Mathematics",
+    title: "Problem Set",
+    description: "Complete this week's problems.",
+    dueDate: today,
+    progress: 20,
+    status: "In Progress",
+  },
+];
+
+const defaultSkills = [
+  {
+    id: 1,
+    name: "Python",
+    category: "Programming",
+    notes: "Learn Python from basics to projects.",
+    videos: [],
+  },
+  {
+    id: 2,
+    name: "Web Development",
+    category: "Development",
+    notes: "HTML, CSS, JavaScript and React.",
+    videos: [],
+  },
+];
+
+const defaultGoals = [
+  {
+    id: 1,
+    title: "Become a Full-Stack Developer",
+    timeframe: "Long-term",
+    category: "Career",
+    progress: 25,
+    targetDate: "2027-01-01",
+  },
+  {
+    id: 2,
+    title: "Complete JavaScript Course",
+    timeframe: "Monthly",
+    category: "Learning",
+    progress: 45,
+    targetDate: today,
+  },
+];
+
+const defaultNotes = [
+  {
+    id: 1,
+    title: "My Learning Plan",
+    content:
+      "Learn programming consistently and build real projects instead of only watching tutorials.",
+    category: "Journal",
+    date: today,
+  },
+];
+
+const defaultFocus = [];
+
+function createTaskDraft() {
+  return {
+    title: "",
+    category: "College",
+    priority: "Medium",
+    deadline: today,
+    estTime: 30,
+    notes: "",
+  };
+}
+
+function createAssignmentDraft() {
+  return {
+    subject: "College",
+    title: "",
+    description: "",
+    dueDate: today,
+    progress: 0,
+    status: "Not Started",
+  };
+}
+
+function createSkillDraft() {
+  return {
+    name: "",
+    category: "Programming",
+    notes: "",
+  };
+}
+
+function createGoalDraft() {
+  return {
+    title: "",
+    timeframe: "Weekly",
+    category: "Growth",
+    progress: 0,
+    targetDate: today,
+  };
+}
+
+function createNoteDraft() {
+  return {
+    title: "",
+    content: "",
+    category: "Journal",
+  };
+}
+
+/* =========================================================
+   APP
+========================================================= */
+
+export default function App() {
+  const [activePage, setActivePage] = useState("dashboard");
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [panelType, setPanelType] = useState(null);
+  const [taskForm, setTaskForm] = useState(createTaskDraft());
+  const [assignmentForm, setAssignmentForm] = useState(createAssignmentDraft());
+  const [skillForm, setSkillForm] = useState(createSkillDraft());
+  const [goalForm, setGoalForm] = useState(createGoalDraft());
+  const [noteForm, setNoteForm] = useState(createNoteDraft());
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+  });
+  const [authError, setAuthError] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+
+  const [userName, setUserName] = useState(
+    localStorage.getItem("buddyspace_user") || "Bikram"
+  );
+
+  const [tasks, setTasks] = useState(() =>
+    loadData("buddyspace_tasks", defaultTasks)
+  );
+
+  const [assignments, setAssignments] = useState(() =>
+    loadData("buddyspace_assignments", defaultAssignments)
+  );
+
+  const [skills, setSkills] = useState(() =>
+    loadData("buddyspace_skills", defaultSkills)
+  );
+
+  const [goals, setGoals] = useState(() =>
+    loadData("buddyspace_goals", defaultGoals)
+  );
+
+  const [notes, setNotes] = useState(() =>
+    loadData("buddyspace_notes", defaultNotes)
+  );
+
+  const [focusHistory, setFocusHistory] = useState(() =>
+    loadData("buddyspace_focus", defaultFocus)
+  );
+
+  async function syncNotesFromAppwrite(userId) {
+    if (!isAppwriteConfigured || !userId) return;
+
+    try {
+      const response = await databases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_NOTES_COLLECTION_ID,
+        [Query.equal("userId", userId)]
+      );
+
+      const appwriteNotes = response.documents.map((doc) => ({
+        id: doc.$id,
+        title: doc.title,
+        content: doc.content,
+        category: doc.category || "Journal",
+        date: doc.date || today,
+      }));
+
+      setNotes(appwriteNotes);
+    } catch (error) {
+      console.error("Failed to load Appwrite notes:", error);
+    }
+  }
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    setAuthError("");
+
+    try {
+      if (!isAppwriteConfigured) {
+        setIsAuthenticated(true);
+        setUserName(authForm.name || userName);
+        return;
+      }
+
+      if (authMode === "signup") {
+        await account.create(
+          ID.unique(),
+          authForm.email,
+          authForm.password,
+          authForm.name || "BuddySpace User"
+        );
+      }
+
+      await account.createEmailPasswordSession(
+        authForm.email,
+        authForm.password
+      );
+
+      const currentUser = await account.get();
+      setAuthUser(currentUser);
+      setIsAuthenticated(true);
+      setUserName(currentUser.name || authForm.name || "BuddySpace User");
+      localStorage.setItem("buddyspace_user", currentUser.name || authForm.name || "BuddySpace User");
+      await syncNotesFromAppwrite(currentUser.$id);
+    } catch (error) {
+      setAuthError(error.message || "Authentication failed.");
+    }
+  }
+
+  async function logout() {
+    try {
+      if (isAppwriteConfigured) {
+        await account.deleteSession("current");
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+
+    setAuthUser(null);
+    setIsAuthenticated(false);
+    setAuthForm({ name: "", email: "", password: "" });
+    setAuthError("");
+  }
+
+  useEffect(() => {
+    if (!isAppwriteConfigured) {
+      setIsAuthenticated(true);
+      return;
+    }
+
+    account.get()
+      .then((currentUser) => {
+        setAuthUser(currentUser);
+        setUserName(currentUser.name || userName);
+        setIsAuthenticated(true);
+        return syncNotesFromAppwrite(currentUser.$id);
+      })
+      .catch(() => {
+        setIsAuthenticated(false);
+      });
+  }, []);
+
+  /* =========================================================
+     SAVE DATA
+  ========================================================= */
+
+  useEffect(() => {
+    saveData("buddyspace_tasks", tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    saveData("buddyspace_assignments", assignments);
+  }, [assignments]);
+
+  useEffect(() => {
+    saveData("buddyspace_skills", skills);
+  }, [skills]);
+
+  useEffect(() => {
+    saveData("buddyspace_goals", goals);
+  }, [goals]);
+
+  useEffect(() => {
+    saveData("buddyspace_notes", notes);
+  }, [notes]);
+
+  useEffect(() => {
+    saveData("buddyspace_focus", focusHistory);
+  }, [focusHistory]);
+
+  useEffect(() => {
+    localStorage.setItem("buddyspace_user", userName);
+  }, [userName]);
+
+  /* =========================================================
+     POMODORO
+  ========================================================= */
+
+  const [timerMode, setTimerMode] = useState("work");
+  const [timerSeconds, setTimerSeconds] = useState(25 * 60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [focusTask, setFocusTask] = useState("General Study");
+
+  useEffect(() => {
+    if (!timerRunning) return;
+
+    const interval = setInterval(() => {
+      setTimerSeconds((seconds) => {
+        if (seconds <= 1) {
+          setTimerRunning(false);
+
+          if (timerMode === "work") {
+            setFocusHistory((history) => [
+              ...history,
+              {
+                id: createId(),
+                date: today,
+                duration: 25,
+                task: focusTask,
+              },
+            ]);
+          }
+
+          return 0;
+        }
+
+        return seconds - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [timerRunning, timerMode, focusTask]);
+
+  function setTimerModeAndReset(mode) {
+    setTimerRunning(false);
+    setTimerMode(mode);
+
+    if (mode === "work") setTimerSeconds(25 * 60);
+    if (mode === "short") setTimerSeconds(5 * 60);
+    if (mode === "long") setTimerSeconds(15 * 60);
+  }
+
+  function resetTimer() {
+    setTimerRunning(false);
+
+    if (timerMode === "work") setTimerSeconds(25 * 60);
+    if (timerMode === "short") setTimerSeconds(5 * 60);
+    if (timerMode === "long") setTimerSeconds(15 * 60);
+  }
+
+  const timerMinutes = Math.floor(timerSeconds / 60);
+  const timerSecs = timerSeconds % 60;
+
+  /* =========================================================
+     STATISTICS
+  ========================================================= */
+
+  const completedTasks = tasks.filter(
+    (task) => task.status === "Completed"
+  ).length;
+
+  const todayTasks = tasks.filter((task) => task.deadline === today);
+
+  const focusMinutes = focusHistory.reduce(
+    (total, item) => total + Number(item.duration || 0),
+    0
+  );
+
+  const watchedVideos = skills.reduce(
+    (total, skill) =>
+      total + skill.videos.filter((video) => video.watched).length,
+    0
+  );
+
+  const totalVideos = skills.reduce(
+    (total, skill) => total + skill.videos.length,
+    0
+  );
+
+  const learningProgress =
+    totalVideos === 0
+      ? 0
+      : Math.round((watchedVideos / totalVideos) * 100);
+
+  const productivity =
+    tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
+
+  /* =========================================================
+     NAVIGATION
+  ========================================================= */
+
+  const navigation = [
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      icon: LayoutDashboard,
+      color: "orange",
+    },
+    {
+      id: "tasks",
+      label: "Tasks",
+      icon: CheckSquare,
+      color: "peach",
+    },
+    {
+      id: "assignments",
+      label: "Assignments",
+      icon: GraduationCap,
+      color: "coral",
+    },
+    {
+      id: "skills",
+      label: "Skill Learning",
+      icon: BookOpen,
+      color: "purple",
+    },
+    {
+      id: "goals",
+      label: "Goals",
+      icon: Target,
+      color: "yellow",
+    },
+    {
+      id: "calendar",
+      label: "Calendar",
+      icon: CalendarDays,
+      color: "green",
+    },
+    {
+      id: "focus",
+      label: "Focus",
+      icon: Clock3,
+      color: "blue",
+    },
+    {
+      id: "notes",
+      label: "Notes",
+      icon: BookMarked,
+      color: "mint",
+    },
+    {
+      id: "analytics",
+      label: "Analytics",
+      icon: BarChart3,
+      color: "sky",
+    },
+    {
+      id: "review",
+      label: "Daily Review",
+      icon: Sun,
+      color: "gold",
+    },
+  ];
+
+  function navigate(page) {
+    setActivePage(page);
+    setMobileMenu(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openPanel(type) {
+    setPanelType(type);
+
+    if (type === "task") setTaskForm(createTaskDraft());
+    if (type === "assignment") setAssignmentForm(createAssignmentDraft());
+    if (type === "skill") setSkillForm(createSkillDraft());
+    if (type === "goal") setGoalForm(createGoalDraft());
+    if (type === "note") setNoteForm(createNoteDraft());
+  }
+
+  function closePanel() {
+    setPanelType(null);
+  }
+
+  /* =========================================================
+     ADD TASK
+  ========================================================= */
+
+  function addTask() {
+    openPanel("task");
+  }
+
+  function submitTask(event) {
+    event.preventDefault();
+
+    if (!taskForm.title.trim()) return;
+
+    const newTask = {
+      id: createId(),
+      title: taskForm.title.trim(),
+      category: taskForm.category,
+      priority: taskForm.priority,
+      deadline: taskForm.deadline || today,
+      estTime: Number(taskForm.estTime) || 30,
+      notes: taskForm.notes.trim(),
+      status: "Pending",
+    };
+
+    setTasks((items) => [newTask, ...items]);
+    closePanel();
+  }
+
+  function toggleTask(id) {
+    setTasks((items) =>
+      items.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              status:
+                task.status === "Completed" ? "Pending" : "Completed",
+            }
+          : task
+      )
+    );
+  }
+
+  function deleteTask(id) {
+    setTasks((items) => items.filter((task) => task.id !== id));
+  }
+
+  /* =========================================================
+     ADD ASSIGNMENT
+  ========================================================= */
+
+  function addAssignment() {
+    openPanel("assignment");
+  }
+
+  function submitAssignment(event) {
+    event.preventDefault();
+
+    if (!assignmentForm.title.trim()) return;
+
+    const newAssignment = {
+      id: createId(),
+      subject: assignmentForm.subject.trim() || "College",
+      title: assignmentForm.title.trim(),
+      description: assignmentForm.description.trim(),
+      dueDate: assignmentForm.dueDate || today,
+      progress: Number(assignmentForm.progress) || 0,
+      status: "Not Started",
+    };
+
+    setAssignments((items) => [...items, newAssignment]);
+    closePanel();
+  }
+
+  function increaseAssignmentProgress(id) {
+    setAssignments((items) =>
+      items.map((assignment) => {
+        if (assignment.id !== id) return assignment;
+
+        const progress = Math.min(100, assignment.progress + 25);
+
+        return {
+          ...assignment,
+          progress,
+          status: progress === 100 ? "Completed" : "In Progress",
+        };
+      })
+    );
+  }
+
+  function deleteAssignment(id) {
+    setAssignments((items) =>
+      items.filter((assignment) => assignment.id !== id)
+    );
+  }
+
+  /* =========================================================
+     SKILLS
+  ========================================================= */
+
+  function addSkill() {
+    openPanel("skill");
+  }
+
+  function submitSkill(event) {
+    event.preventDefault();
+
+    if (!skillForm.name.trim()) return;
+
+    setSkills((items) => [
+      ...items,
+      {
+        id: createId(),
+        name: skillForm.name.trim(),
+        category: skillForm.category,
+        notes: skillForm.notes.trim(),
+        videos: [],
+      },
+    ]);
+    closePanel();
+  }
+
+  function addYouTubeVideo(skillId) {
+    const title = window.prompt("Video title:");
+
+    if (!title?.trim()) return;
+
+    const url = window.prompt(
+      "Paste YouTube URL:",
+      "https://www.youtube.com/watch?v="
+    );
+
+    const videoId = getYouTubeId(url);
+
+    if (!videoId) {
+      window.alert("Please enter a valid YouTube URL.");
+      return;
+    }
+
+    const video = {
+      id: createId(),
+      title: title.trim(),
+      videoId,
+      watched: false,
+    };
+
+    setSkills((items) =>
+      items.map((skill) =>
+        skill.id === skillId
+          ? {
+              ...skill,
+              videos: [...skill.videos, video],
+            }
+          : skill
+      )
+    );
+  }
+
+  function toggleVideo(skillId, videoId) {
+    setSkills((items) =>
+      items.map((skill) =>
+        skill.id === skillId
+          ? {
+              ...skill,
+              videos: skill.videos.map((video) =>
+                video.id === videoId
+                  ? { ...video, watched: !video.watched }
+                  : video
+              ),
+            }
+          : skill
+      )
+    );
+  }
+
+  function deleteSkill(skillId) {
+    setSkills((items) => items.filter((skill) => skill.id !== skillId));
+  }
+
+  /* =========================================================
+     GOALS
+  ========================================================= */
+
+  function addGoal() {
+    openPanel("goal");
+  }
+
+  function submitGoal(event) {
+    event.preventDefault();
+
+    if (!goalForm.title.trim()) return;
+
+    setGoals((items) => [
+      ...items,
+      {
+        id: createId(),
+        title: goalForm.title.trim(),
+        timeframe: goalForm.timeframe,
+        category: goalForm.category,
+        progress: Number(goalForm.progress) || 0,
+        targetDate: goalForm.targetDate || today,
+      },
+    ]);
+    closePanel();
+  }
+
+  function increaseGoal(id) {
+    setGoals((items) =>
+      items.map((goal) =>
+        goal.id === id
+          ? {
+              ...goal,
+              progress: Math.min(100, goal.progress + 10),
+            }
+          : goal
+      )
+    );
+  }
+
+  function deleteGoal(id) {
+    setGoals((items) => items.filter((goal) => goal.id !== id));
+  }
+
+  /* =========================================================
+     NOTES
+  ========================================================= */
+
+  function addNote() {
+    openPanel("note");
+  }
+
+  async function submitNote(event) {
+    event.preventDefault();
+
+    if (!noteForm.title.trim() || !noteForm.content.trim()) return;
+
+    const notePayload = {
+      id: createId(),
+      title: noteForm.title.trim(),
+      content: noteForm.content.trim(),
+      category: noteForm.category,
+      date: today,
+    };
+
+    if (isAppwriteConfigured && authUser) {
+      try {
+        await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_NOTES_COLLECTION_ID,
+          ID.unique(),
+          {
+            userId: authUser.$id,
+            title: notePayload.title,
+            content: notePayload.content,
+            category: notePayload.category,
+            date: today,
+          }
+        );
+      } catch (error) {
+        console.error("Failed to save note to Appwrite:", error);
+      }
+    }
+
+    setNotes((items) => [notePayload, ...items]);
+    closePanel();
+  }
+
+  async function deleteNote(id) {
+    if (isAppwriteConfigured && authUser && typeof id === "string") {
+      await deleteNoteFromAppwrite(id);
+    }
+
+    setNotes((items) => items.filter((note) => note.id !== id));
+  }
+
+  async function deleteNoteFromAppwrite(noteId) {
+    if (!isAppwriteConfigured || !authUser) return;
+
+    try {
+      await databases.deleteDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_NOTES_COLLECTION_ID,
+        noteId
+      );
+    } catch (error) {
+      console.error("Failed to delete Appwrite note:", error);
+    }
+  }
+
+  /* =========================================================
+     PAGE TITLE
+  ========================================================= */
+
+  const pageTitle = useMemo(() => {
+    const found = navigation.find((item) => item.id === activePage);
+    return found?.label || "Dashboard";
+  }, [activePage]);
+
+  /* =========================================================
+     RENDER
+  ========================================================= */
+
+  if (!isAuthenticated) {
+    return (
+      <LoginPage
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        authForm={authForm}
+        setAuthForm={setAuthForm}
+        authError={authError}
+        onSubmit={handleAuthSubmit}
+        isAppwriteConfigured={isAppwriteConfigured}
+      />
+    );
+  }
+
+  return (
+    <div className="app">
+      {/* MOBILE HEADER */}
+
+      <header className="mobile-header">
+        <button
+          className="icon-button"
+          onClick={() => setMobileMenu(true)}
+          aria-label="Open menu"
+        >
+          <Menu size={22} />
+        </button>
+
+        <div className="brand-small">
+          <span className="brand-logo">🌱</span>
+          <strong>BuddySpace</strong>
+        </div>
+
+        <span className="mobile-streak">
+          <Flame size={16} />
+          5
+        </span>
+      </header>
+
+      {/* SIDEBAR */}
+
+      <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
+        <div>
+          <div className="brand">
+            <div className="brand-logo">🌱</div>
+
+            <div>
+              <h1>BuddySpace</h1>
+              <p>Your friendly companion</p>
+            </div>
+
+            <button
+              className="mobile-close"
+              onClick={() => setMobileMenu(false)}
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <nav className="navigation">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => navigate(item.id)}
+                  className={`nav-item ${
+                    activePage === item.id ? "active" : ""
+                  }`}
+                >
+                  <Icon size={19} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div className="profile-card">
+          <div className="avatar">🦊</div>
+
+          <div>
+            <strong>{userName}</strong>
+
+            <span>
+              <Flame size={13} />
+              5 day streak
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <div className="eyebrow">
+              <Sparkles size={14} />
+              Your personal workspace
+            </div>
+
+            <h2>{pageTitle}</h2>
+
+            <p>
+              Welcome back, {userName}! Let&apos;s make today wonderfully
+              productive.
+            </p>
+          </div>
+
+          <div className="top-actions">
+            <div className="task-chip">
+              <Check size={14} />
+              {completedTasks} tasks done
+            </div>
+
+            <button
+              className="dark-button"
+              onClick={() => navigate("focus")}
+            >
+              <Timer size={16} />
+              Focus
+            </button>
+
+            <button className="dark-button" onClick={logout}>
+              <LogOut size={16} />
+              Logout
+            </button>
+          </div>
+        </header>
+
+        <div className="content">
+          {/* DASHBOARD */}
+
+          {activePage === "dashboard" && (
+            <Dashboard
+              userName={userName}
+              tasks={tasks}
+              assignments={assignments}
+              completedTasks={completedTasks}
+              focusMinutes={focusMinutes}
+              watchedVideos={watchedVideos}
+              productivity={productivity}
+              learningProgress={learningProgress}
+              navigate={navigate}
+              toggleTask={toggleTask}
+            />
+          )}
+
+          {/* TASKS */}
+
+          {activePage === "tasks" && (
+            <TasksPage
+              tasks={tasks}
+              addTask={addTask}
+              toggleTask={toggleTask}
+              deleteTask={deleteTask}
+            />
+          )}
+
+          {panelType && (
+            <CreatePanel
+              type={panelType}
+              taskForm={taskForm}
+              setTaskForm={setTaskForm}
+              assignmentForm={assignmentForm}
+              setAssignmentForm={setAssignmentForm}
+              skillForm={skillForm}
+              setSkillForm={setSkillForm}
+              goalForm={goalForm}
+              setGoalForm={setGoalForm}
+              noteForm={noteForm}
+              setNoteForm={setNoteForm}
+              onClose={closePanel}
+              onSubmit={
+                panelType === "task"
+                  ? submitTask
+                  : panelType === "assignment"
+                    ? submitAssignment
+                    : panelType === "skill"
+                      ? submitSkill
+                      : panelType === "goal"
+                        ? submitGoal
+                        : submitNote
+              }
+            />
+          )}
+
+          {/* ASSIGNMENTS */}
+
+          {activePage === "assignments" && (
+            <AssignmentsPage
+              assignments={assignments}
+              addAssignment={addAssignment}
+              increaseAssignmentProgress={increaseAssignmentProgress}
+              deleteAssignment={deleteAssignment}
+            />
+          )}
+
+          {/* SKILLS */}
+
+          {activePage === "skills" && (
+            <SkillsPage
+              skills={skills}
+              addSkill={addSkill}
+              addYouTubeVideo={addYouTubeVideo}
+              toggleVideo={toggleVideo}
+              deleteSkill={deleteSkill}
+            />
+          )}
+
+          {/* GOALS */}
+
+          {activePage === "goals" && (
+            <GoalsPage
+              goals={goals}
+              addGoal={addGoal}
+              increaseGoal={increaseGoal}
+              deleteGoal={deleteGoal}
+            />
+          )}
+
+          {/* CALENDAR */}
+
+          {activePage === "calendar" && (
+            <CalendarPage tasks={tasks} assignments={assignments} />
+          )}
+
+          {/* FOCUS */}
+
+          {activePage === "focus" && (
+            <FocusPage
+              timerMode={timerMode}
+              timerSeconds={timerSeconds}
+              timerRunning={timerRunning}
+              timerMinutes={timerMinutes}
+              timerSecs={timerSecs}
+              focusTask={focusTask}
+              setFocusTask={setFocusTask}
+              setTimerRunning={setTimerRunning}
+              setTimerModeAndReset={setTimerModeAndReset}
+              resetTimer={resetTimer}
+              focusHistory={focusHistory}
+            />
+          )}
+
+          {/* NOTES */}
+
+          {activePage === "notes" && (
+            <NotesPage
+              notes={notes}
+              addNote={addNote}
+              deleteNote={deleteNote}
+            />
+          )}
+
+          {/* ANALYTICS */}
+
+          {activePage === "analytics" && (
+            <AnalyticsPage
+              tasks={tasks}
+              completedTasks={completedTasks}
+              focusMinutes={focusMinutes}
+              watchedVideos={watchedVideos}
+              totalVideos={totalVideos}
+              productivity={productivity}
+              learningProgress={learningProgress}
+              assignments={assignments}
+              goals={goals}
+            />
+          )}
+
+          {/* REVIEW */}
+
+          {activePage === "review" && (
+            <ReviewPage
+              tasks={tasks}
+              completedTasks={completedTasks}
+              focusMinutes={focusMinutes}
+              watchedVideos={watchedVideos}
+            />
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+
+function Dashboard({
+  userName,
+  tasks,
+  assignments,
+  completedTasks,
+  focusMinutes,
+  watchedVideos,
+  productivity,
+  learningProgress,
+  navigate,
+  toggleTask,
+}) {
+  const pending = tasks.filter((task) => task.status !== "Completed");
+
+  return (
+    <div className="page-stack">
+      <section className="welcome-card">
+        <div className="welcome-decoration">✨</div>
+
+        <div className="welcome-content">
+          <span className="date-pill">
+            {new Date().toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </span>
+
+          <h1>Good morning, {userName}! ☀️</h1>
+
+          <p>
+            You have <strong>{pending.length} tasks</strong> waiting and{" "}
+            <strong>{assignments.length} assignments</strong> on your radar.
+            Keep going—you&apos;re doing great! 🌱
+          </p>
+
+          <div className="welcome-buttons">
+            <button
+              className="white-button"
+              onClick={() => navigate("tasks")}
+            >
+              <CheckSquare size={17} />
+              View today&apos;s tasks
+            </button>
+
+            <button
+              className="glass-button"
+              onClick={() => navigate("focus")}
+            >
+              <Play size={16} />
+              Quick focus
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="stat-grid">
+        <StatCard
+          icon="📝"
+          title="Completed Tasks"
+          value={completedTasks}
+          extra={`/ ${tasks.length}`}
+          color="orange"
+        />
+
+        <StatCard
+          icon="⏱️"
+          title="Focus Time"
+          value={focusMinutes}
+          extra="mins"
+          color="blue"
+        />
+
+        <StatCard
+          icon="🎓"
+          title="Videos Watched"
+          value={watchedVideos}
+          extra="videos"
+          color="purple"
+        />
+
+        <StatCard
+          icon="🔥"
+          title="Productivity"
+          value={productivity}
+          extra="%"
+          color="yellow"
+        />
+      </section>
+
+      <section className="dashboard-grid">
+        <div className="card">
+          <SectionHeader
+            title="Today&apos;s Tasks"
+            icon="📝"
+            color="orange"
+            action="View all"
+            onAction={() => navigate("tasks")}
+          />
+
+          <div className="item-list">
+            {tasks.slice(0, 4).map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                onToggle={toggleTask}
+              />
+            ))}
+
+            {tasks.length === 0 && <EmptyState text="No tasks yet 🎉" />}
+          </div>
+        </div>
+
+        <div className="card">
+          <SectionHeader
+            title="Upcoming Assignments"
+            icon="📚"
+            color="coral"
+            action="View all"
+            onAction={() => navigate("assignments")}
+          />
+
+          <div className="item-list">
+            {assignments.slice(0, 3).map((assignment) => (
+              <AssignmentMini
+                key={assignment.id}
+                assignment={assignment}
+              />
+            ))}
+
+            {assignments.length === 0 && (
+              <EmptyState text="No assignments 🎉" />
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="card learning-summary">
+        <div>
+          <span className="section-label">🎓 Learning progress</span>
+
+          <h3>Keep building your skills</h3>
+
+          <p>
+            Your overall video learning progress is{" "}
+            <strong>{learningProgress}%</strong>.
+          </p>
+        </div>
+
+        <div className="big-progress">
+          <div className="progress-number">{learningProgress}%</div>
+
+          <div className="progress-track">
+            <div
+              className="progress-fill purple"
+              style={{ width: `${learningProgress}%` }}
+            />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* =========================================================
+   TASK PAGE
+========================================================= */
+
+function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = tasks.filter((task) =>
+    task.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="page-stack">
+      <PageIntro
+        title="Task Manager"
+        description="Organize college work, personal tasks, and learning."
+        buttonText="Add New Task"
+        onClick={addTask}
+        icon={<Plus size={17} />}
+        color="orange"
+      />
+
+      <div className="toolbar">
+        <div className="search-box">
+          <Search size={17} />
+          <input
+            placeholder="Search tasks..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+
+        <span className="result-count">{filtered.length} tasks</span>
+      </div>
+
+      <div className="task-list">
+        {filtered.map((task) => (
+          <div
+            className={`task-card ${
+              task.status === "Completed" ? "completed" : ""
+            }`}
+            key={task.id}
+          >
+            <div className="task-main">
+              <button
+                className={`check-button ${
+                  task.status === "Completed" ? "checked" : ""
+                }`}
+                onClick={() => toggleTask(task.id)}
+              >
+                {task.status === "Completed" && <Check size={15} />}
+              </button>
+
+              <div>
+                <h3>{task.title}</h3>
+
+                <p>{task.notes || "No notes added."}</p>
+
+                <div className="tag-row">
+                  <span className="tag orange">{task.category}</span>
+                  <span className="tag gray">⏱ {task.estTime} min</span>
+                  <span className="tag gray">
+                    📅 {formatDate(task.deadline)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="task-actions">
+              <PriorityTag priority={task.priority} />
+
+              <button
+                className="delete-button"
+                onClick={() => deleteTask(task.id)}
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {filtered.length === 0 && (
+          <EmptyState text="No matching tasks found." />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   ASSIGNMENTS
+========================================================= */
+
+function AssignmentsPage({
+  assignments,
+  addAssignment,
+  increaseAssignmentProgress,
+  deleteAssignment,
+}) {
+  return (
+    <div className="page-stack">
+      <PageIntro
+        title="Assignment Manager"
+        description="Track college deadlines and project progress."
+        buttonText="Add Assignment"
+        onClick={addAssignment}
+        icon={<Plus size={17} />}
+        color="coral"
+      />
+
+      <div className="two-column">
+        {assignments.map((assignment) => (
+          <div className="card assignment-card" key={assignment.id}>
+            <div className="assignment-top">
+              <span className="tag coral">{assignment.subject}</span>
+
+              <span className="due">
+                {getDaysUntil(assignment.dueDate) === 0
+                  ? "Due today"
+                  : `${getDaysUntil(assignment.dueDate)} days left`}
+              </span>
+            </div>
+
+            <h3>{assignment.title}</h3>
+
+            <p>{assignment.description || "No description added."}</p>
+
+            <div className="progress-header">
+              <span>Progress</span>
+              <strong>{assignment.progress}%</strong>
+            </div>
+
+            <div className="progress-track">
+              <div
+                className="progress-fill coral"
+                style={{ width: `${assignment.progress}%` }}
+              />
+            </div>
+
+            <div className="assignment-footer">
+              <button
+                className="small-button coral-button"
+                onClick={() => increaseAssignmentProgress(assignment.id)}
+              >
+                +25% Progress
+              </button>
+
+              <button
+                className="delete-button"
+                onClick={() => deleteAssignment(assignment.id)}
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   SKILLS
+========================================================= */
+
+function SkillsPage({
+  skills,
+  addSkill,
+  addYouTubeVideo,
+  toggleVideo,
+  deleteSkill,
+}) {
+  return (
+    <div className="page-stack">
+      <PageIntro
+        title="Skill Learning"
+        description="Learn skills and watch YouTube courses directly inside BuddySpace."
+        buttonText="Add New Skill"
+        onClick={addSkill}
+        icon={<Plus size={17} />}
+        color="purple"
+      />
+
+      {skills.map((skill) => {
+        const watched = skill.videos.filter((video) => video.watched).length;
+
+        const progress =
+          skill.videos.length === 0
+            ? 0
+            : Math.round((watched / skill.videos.length) * 100);
+
+        return (
+          <div className="card skill-card" key={skill.id}>
+            <div className="skill-header">
+              <div>
+                <span className="tag purple">{skill.category}</span>
+
+                <h3>{skill.name}</h3>
+
+                <p>{skill.notes || "Keep learning consistently."}</p>
+              </div>
+
+              <div className="skill-actions">
+                <div className="skill-progress">
+                  <strong>{progress}%</strong>
+                  <span>complete</span>
+                </div>
+
+                <button
+                  className="small-button purple-button"
+                  onClick={() => addYouTubeVideo(skill.id)}
+                >
+                  <Youtube size={15} />
+                  Add YouTube
+                </button>
+
+                <button
+                  className="delete-button"
+                  onClick={() => deleteSkill(skill.id)}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </div>
+            </div>
+
+            <div className="progress-track">
+              <div
+                className="progress-fill purple"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            <div className="video-grid">
+              {skill.videos.map((video) => (
+                <div className="video-card" key={video.id}>
+                  <div className="video-title">
+                    <div>
+                      <Youtube size={17} />
+                      <strong>{video.title}</strong>
+                    </div>
+
+                    <button
+                      className={`watch-button ${
+                        video.watched ? "watched" : ""
+                      }`}
+                      onClick={() => toggleVideo(skill.id, video.id)}
+                    >
+                      {video.watched ? "✓ Watched" : "Mark watched"}
+                    </button>
+                  </div>
+
+                  <div className="youtube-frame">
+                    <iframe
+                      src={`https://www.youtube.com/embed/${video.videoId}`}
+                      title={video.title}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {skill.videos.length === 0 && (
+                <div className="empty-video">
+                  <Youtube size={30} />
+                  <p>Add your first YouTube learning video.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* =========================================================
+   GOALS
+========================================================= */
+
+function GoalsPage({ goals, addGoal, increaseGoal, deleteGoal }) {
+  return (
+    <div className="page-stack">
+      <PageIntro
+        title="Goals & Growth"
+        description="Turn big dreams into small actions."
+        buttonText="Add Goal"
+        onClick={addGoal}
+        icon={<Plus size={17} />}
+        color="yellow"
+      />
+
+      <div className="two-column">
+        {goals.map((goal) => (
+          <div className="card goal-card" key={goal.id}>
+            <div className="goal-top">
+              <span className="tag yellow">{goal.timeframe}</span>
+              <span>{goal.category}</span>
+            </div>
+
+            <h3>{goal.title}</h3>
+
+            <p>Target: {formatDate(goal.targetDate)}</p>
+
+            <div className="progress-header">
+              <span>Progress</span>
+              <strong>{goal.progress}%</strong>
+            </div>
+
+            <div className="progress-track">
+              <div
+                className="progress-fill yellow"
+                style={{ width: `${goal.progress}%` }}
+              />
+            </div>
+
+            <div className="goal-footer">
+              <button
+                className="small-button yellow-button"
+                onClick={() => increaseGoal(goal.id)}
+              >
+                +10% Progress
+              </button>
+
+              <button
+                className="delete-button"
+                onClick={() => deleteGoal(goal.id)}
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   CALENDAR
+========================================================= */
+
+function CalendarPage({ tasks, assignments }) {
+  const date = new Date();
+
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const firstDay = new Date(year, month, 1).getDay();
+
+  const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
+
+  const events = [...tasks, ...assignments];
+
+  function hasEvent(day) {
+    const dateString = `${year}-${String(month + 1).padStart(
+      2,
+      "0"
+    )}-${String(day).padStart(2, "0")}`;
+
+    return events.some(
+      (item) => item.deadline === dateString || item.dueDate === dateString
+    );
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="card calendar-card">
+        <div className="calendar-header">
+          <div>
+            <span className="section-label">📅 Your schedule</span>
+            <h3>
+              {date.toLocaleDateString(undefined, {
+                month: "long",
+                year: "numeric",
+              })}
+            </h3>
+          </div>
+
+          <span className="tag blue">Tasks + Assignments</span>
+        </div>
+
+        <div className="calendar-grid">
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
+            (day) => (
+              <div className="calendar-weekday" key={day}>
+                {day}
+              </div>
+            )
+          )}
+
+          {Array.from({ length: adjustedFirstDay }).map((_, index) => (
+            <div className="calendar-empty" key={`empty-${index}`} />
+          ))}
+
+          {Array.from({ length: daysInMonth }).map((_, index) => {
+            const day = index + 1;
+            const isToday = day === date.getDate();
+
+            return (
+              <div
+                className={`calendar-day ${isToday ? "today" : ""}`}
+                key={day}
+              >
+                <span>{day}</span>
+
+                {hasEvent(day) && <i />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <SectionHeader title="Upcoming" icon="📌" color="blue" />
+
+        <div className="item-list">
+          {events
+            .filter((item) => {
+              const eventDate = item.deadline || item.dueDate;
+              return getDaysUntil(eventDate) !== null;
+            })
+            .slice(0, 8)
+            .map((item) => (
+              <div className="upcoming-row" key={item.id}>
+                <div>
+                  <strong>{item.title}</strong>
+                  <span>{formatDate(item.deadline || item.dueDate)}</span>
+                </div>
+
+                <ChevronRight size={17} />
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   FOCUS
+========================================================= */
+
+function FocusPage({
+  timerMode,
+  timerSeconds,
+  timerRunning,
+  timerMinutes,
+  timerSecs,
+  focusTask,
+  setFocusTask,
+  setTimerRunning,
+  setTimerModeAndReset,
+  resetTimer,
+  focusHistory,
+}) {
+  return (
+    <div className="focus-page">
+      <div className="card focus-card">
+        <span className="section-label">🧠 Deep work room</span>
+
+        <h3>Focus & Pomodoro</h3>
+
+        <p>
+          Work in small focused sessions and give your brain proper breaks.
+        </p>
+
+        <div className="timer-modes">
+          <button
+            className={timerMode === "work" ? "selected" : ""}
+            onClick={() => setTimerModeAndReset("work")}
+          >
+            <Timer size={15} />
+            Focus 25m
+          </button>
+
+          <button
+            className={timerMode === "short" ? "selected" : ""}
+            onClick={() => setTimerModeAndReset("short")}
+          >
+            <Coffee size={15} />
+            Short 5m
+          </button>
+
+          <button
+            className={timerMode === "long" ? "selected" : ""}
+            onClick={() => setTimerModeAndReset("long")}
+          >
+            <Moon size={15} />
+            Long 15m
+          </button>
+        </div>
+
+        <div className="timer-circle">
+          <div>
+            <span>
+              {String(timerMinutes).padStart(2, "0")}:
+              {String(timerSecs).padStart(2, "0")}
+            </span>
+
+            <small>{timerRunning ? "Stay focused" : "Ready?"}</small>
+          </div>
+        </div>
+
+        <input
+          className="focus-input"
+          value={focusTask}
+          onChange={(event) => setFocusTask(event.target.value)}
+          placeholder="What are you working on?"
+        />
+
+        <div className="timer-buttons">
+          <button
+            className="dark-button large"
+            onClick={() => setTimerRunning(!timerRunning)}
+          >
+            {timerRunning ? <Pause size={18} /> : <Play size={18} />}
+            {timerRunning ? "Pause" : "Start Focus"}
+          </button>
+
+          <button className="reset-button" onClick={resetTimer}>
+            <RotateCcw size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="card focus-history">
+        <SectionHeader title="Focus history" icon="🔥" color="orange" />
+
+        {focusHistory.length === 0 ? (
+          <EmptyState text="Your completed focus sessions will appear here." />
+        ) : (
+          <div className="item-list">
+            {focusHistory.slice(-8).reverse().map((item) => (
+              <div className="upcoming-row" key={item.id}>
+                <div>
+                  <strong>{item.task}</strong>
+                  <span>
+                    {item.duration} minutes · {formatDate(item.date)}
+                  </span>
+                </div>
+
+                <Timer size={17} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   NOTES
+========================================================= */
+
+function NotesPage({ notes, addNote, deleteNote }) {
+  return (
+    <div className="page-stack">
+      <PageIntro
+        title="Notes & Journal"
+        description="Save learning notes, ideas, reflections and revision points."
+        buttonText="Add Note"
+        onClick={addNote}
+        icon={<Plus size={17} />}
+        color="mint"
+      />
+
+      <div className="two-column">
+        {notes.map((note) => (
+          <div className="card note-card" key={note.id}>
+            <div className="note-top">
+              <span className="tag mint">{note.category}</span>
+              <span>{formatDate(note.date)}</span>
+            </div>
+
+            <h3>{note.title}</h3>
+
+            <p>{note.content}</p>
+
+            <button
+              className="delete-button"
+              onClick={() => deleteNote(note.id)}
+            >
+              <Trash2 size={17} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   ANALYTICS
+========================================================= */
+
+function AnalyticsPage({
+  completedTasks,
+  focusMinutes,
+  watchedVideos,
+  totalVideos,
+  productivity,
+  learningProgress,
+  assignments,
+  goals,
+}) {
+  const completedAssignments = assignments.filter(
+    (item) => item.progress === 100
+  ).length;
+
+  const averageGoalProgress =
+    goals.length === 0
+      ? 0
+      : Math.round(
+          goals.reduce((sum, goal) => sum + goal.progress, 0) / goals.length
+        );
+
+  return (
+    <div className="page-stack">
+      <div className="analytics-hero">
+        <div>
+          <span>📊 Your progress</span>
+          <h2>You&apos;re building momentum!</h2>
+          <p>
+            Small consistent actions are turning into real progress.
+          </p>
+        </div>
+
+        <Trophy size={50} />
+      </div>
+
+      <section className="stat-grid">
+        <StatCard
+          icon="✅"
+          title="Tasks Completed"
+          value={completedTasks}
+          color="orange"
+        />
+
+        <StatCard
+          icon="⏱️"
+          title="Focus Minutes"
+          value={focusMinutes}
+          color="blue"
+        />
+
+        <StatCard
+          icon="🎥"
+          title="Videos Watched"
+          value={watchedVideos}
+          color="purple"
+        />
+
+        <StatCard
+          icon="🎯"
+          title="Goal Progress"
+          value={averageGoalProgress}
+          extra="%"
+          color="yellow"
+        />
+      </section>
+
+      <div className="two-column">
+        <div className="card">
+          <SectionHeader title="Productivity" icon="⚡" color="orange" />
+
+          <BigMetric
+            label="Task completion"
+            value={productivity}
+            suffix="%"
+            color="orange"
+          />
+
+          <BigMetric
+            label="Assignment completion"
+            value={
+              assignments.length === 0
+                ? 0
+                : Math.round(
+                    (completedAssignments / assignments.length) * 100
+                  )
+            }
+            suffix="%"
+            color="coral"
+          />
+        </div>
+
+        <div className="card">
+          <SectionHeader title="Learning" icon="🎓" color="purple" />
+
+          <BigMetric
+            label={`Video progress (${watchedVideos}/${totalVideos})`}
+            value={learningProgress}
+            suffix="%"
+            color="purple"
+          />
+
+          <p className="analytics-message">
+            Keep your learning streak alive. Even 20 minutes today counts.
+            🌱
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   DAILY REVIEW
+========================================================= */
+
+function ReviewPage({
+  tasks,
+  completedTasks,
+  focusMinutes,
+  watchedVideos,
+}) {
+  const unfinished = tasks.filter(
+    (task) => task.status !== "Completed"
+  );
+
+  return (
+    <div className="review-page">
+      <div className="card review-card">
+        <div className="review-icon">🌅</div>
+
+        <span className="section-label">End of day</span>
+
+        <h2>Daily Review</h2>
+
+        <p>
+          Take a moment to see what you accomplished and prepare for
+          tomorrow.
+        </p>
+
+        <div className="review-stats">
+          <div>
+            <strong>{completedTasks}</strong>
+            <span>Tasks completed</span>
+          </div>
+
+          <div>
+            <strong>{focusMinutes}</strong>
+            <span>Focus minutes</span>
+          </div>
+
+          <div>
+            <strong>{watchedVideos}</strong>
+            <span>Videos watched</span>
+          </div>
+        </div>
+
+        <div className="review-section">
+          <h3>Carry into tomorrow</h3>
+
+          {unfinished.length === 0 ? (
+            <div className="success-message">
+              <Check size={18} />
+              Everything is done. Amazing work! 🎉
+            </div>
+          ) : (
+            <div className="item-list">
+              {unfinished.map((task) => (
+                <div className="upcoming-row" key={task.id}>
+                  <div>
+                    <strong>{task.title}</strong>
+                    <span>{task.category}</span>
+                  </div>
+
+                  <AlertCircle size={17} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button className="dark-button large">
+          <Save size={17} />
+          Complete today&apos;s review
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   REUSABLE COMPONENTS
+========================================================= */
+
+function StatCard({ icon, title, value, extra, color }) {
+  return (
+    <div className="stat-card">
+      <div className={`stat-icon ${color}`}>{icon}</div>
+
+      <div>
+        <span>{title}</span>
+
+        <strong>
+          {value}
+          {extra && <small>{extra}</small>}
+        </strong>
+      </div>
+    </div>
+  );
+}
+
+function PageIntro({
+  title,
+  description,
+  buttonText,
+  onClick,
+  icon,
+  color,
+}) {
+  return (
+    <div className="page-intro">
+      <div>
+        <span className="section-label">✨ BuddySpace</span>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+
+      <button className={`primary-button ${color}`} onClick={onClick}>
+        {icon}
+        {buttonText}
+      </button>
+    </div>
+  );
+}
+
+function SectionHeader({ title, icon, action, onAction, color }) {
+  return (
+    <div className="section-header">
+      <div className="section-title">
+        <span className={`section-dot ${color}`} />
+        <h3>{icon} {title}</h3>
+      </div>
+
+      {action && (
+        <button className="link-button" onClick={onAction}>
+          {action}
+          <ChevronRight size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TaskRow({ task, onToggle }) {
+  return (
+    <div className={`task-row ${task.status === "Completed" ? "done" : ""}`}>
+      <button
+        className={`check-button ${
+          task.status === "Completed" ? "checked" : ""
+        }`}
+        onClick={() => onToggle(task.id)}
+      >
+        {task.status === "Completed" && <Check size={14} />}
+      </button>
+
+      <div>
+        <strong>{task.title}</strong>
+
+        <div className="mini-tags">
+          <span>{task.category}</span>
+          <span>{task.estTime}m</span>
+        </div>
+      </div>
+
+      <PriorityTag priority={task.priority} />
+    </div>
+  );
+}
+
+function PriorityTag({ priority }) {
+  const className =
+    priority === "High"
+      ? "high"
+      : priority === "Medium"
+      ? "medium"
+      : "low";
+
+  return <span className={`priority ${className}`}>{priority}</span>;
+}
+
+function AssignmentMini({ assignment }) {
+  return (
+    <div className="assignment-mini">
+      <div className="assignment-mini-top">
+        <span>{assignment.subject}</span>
+
+        <small>{formatDate(assignment.dueDate)}</small>
+      </div>
+
+      <strong>{assignment.title}</strong>
+
+      <div className="progress-track">
+        <div
+          className="progress-fill coral"
+          style={{ width: `${assignment.progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div className="empty-state">
+      <span>🌱</span>
+      <p>{text}</p>
+    </div>
+  );
+}
+
+function LoginPage({
+  authMode,
+  setAuthMode,
+  authForm,
+  setAuthForm,
+  authError,
+  onSubmit,
+  isAppwriteConfigured,
+}) {
+  return (
+    <div className="login-shell">
+      <div className="login-card">
+        <div className="brand login-brand">
+          <div className="brand-logo">🌱</div>
+
+          <div>
+            <h1>BuddySpace</h1>
+            <p>Your study companion</p>
+          </div>
+        </div>
+
+        <div className="auth-toggle">
+          <button
+            type="button"
+            className={authMode === "login" ? "active" : ""}
+            onClick={() => setAuthMode("login")}
+          >
+            Login
+          </button>
+
+          <button
+            type="button"
+            className={authMode === "signup" ? "active" : ""}
+            onClick={() => setAuthMode("signup")}
+          >
+            Sign up
+          </button>
+        </div>
+
+        <form className="login-form" onSubmit={onSubmit}>
+          {authMode === "signup" && (
+            <label className="field-group">
+              <span>Full name</span>
+              <input
+                type="text"
+                value={authForm.name}
+                onChange={(event) =>
+                  setAuthForm({ ...authForm, name: event.target.value })
+                }
+                placeholder="Your name"
+              />
+            </label>
+          )}
+
+          <label className="field-group">
+            <span>Email</span>
+            <input
+              type="email"
+              value={authForm.email}
+              onChange={(event) =>
+                setAuthForm({ ...authForm, email: event.target.value })
+              }
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+
+          <label className="field-group">
+            <span>Password</span>
+            <input
+              type="password"
+              value={authForm.password}
+              onChange={(event) =>
+                setAuthForm({ ...authForm, password: event.target.value })
+              }
+              placeholder="******"
+              required
+            />
+          </label>
+
+          {!isAppwriteConfigured && (
+            <p className="auth-hint">
+              Appwrite is not configured yet, so the app is running in demo mode.
+            </p>
+          )}
+
+          {authError && <p className="auth-error">{authError}</p>}
+
+          <button type="submit" className="primary-button orange full-width">
+            {authMode === "login" ? "Login" : "Create account"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function CreatePanel({
+  type,
+  taskForm,
+  setTaskForm,
+  assignmentForm,
+  setAssignmentForm,
+  skillForm,
+  setSkillForm,
+  goalForm,
+  setGoalForm,
+  noteForm,
+  setNoteForm,
+  onClose,
+  onSubmit,
+}) {
+  const isTask = type === "task";
+  const isAssignment = type === "assignment";
+  const isSkill = type === "skill";
+  const isGoal = type === "goal";
+  const isNote = type === "note";
+
+  const title =
+    isTask
+      ? "Add New Task"
+      : isAssignment
+        ? "Add Assignment"
+        : isSkill
+          ? "Add New Skill"
+          : isGoal
+            ? "Add Goal"
+            : "Add Note";
+
+  return (
+    <div className="panel-overlay" onClick={onClose}>
+      <div className="panel" onClick={(event) => event.stopPropagation()}>
+        <div className="panel-header">
+          <div>
+            <span className="section-label">✨ BuddySpace</span>
+            <h3>{title}</h3>
+          </div>
+
+          <button className="panel-close" onClick={onClose} aria-label="Close panel">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form className="panel-form" onSubmit={onSubmit}>
+          {isTask && (
+            <>
+              <label className="field-group">
+                <span>Task title</span>
+                <input
+                  type="text"
+                  value={taskForm.title}
+                  onChange={(event) =>
+                    setTaskForm({ ...taskForm, title: event.target.value })
+                  }
+                  placeholder="Complete assignment"
+                  required
+                />
+              </label>
+
+              <div className="two-field-grid">
+                <label className="field-group">
+                  <span>Category</span>
+                  <select
+                    value={taskForm.category}
+                    onChange={(event) =>
+                      setTaskForm({ ...taskForm, category: event.target.value })
+                    }
+                  >
+                    <option>College</option>
+                    <option>Learning</option>
+                    <option>Personal</option>
+                    <option>Wellness</option>
+                  </select>
+                </label>
+
+                <label className="field-group">
+                  <span>Priority</span>
+                  <select
+                    value={taskForm.priority}
+                    onChange={(event) =>
+                      setTaskForm({ ...taskForm, priority: event.target.value })
+                    }
+                  >
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="two-field-grid">
+                <label className="field-group">
+                  <span>Deadline</span>
+                  <input
+                    type="date"
+                    value={taskForm.deadline}
+                    onChange={(event) =>
+                      setTaskForm({ ...taskForm, deadline: event.target.value })
+                    }
+                  />
+                </label>
+
+                <label className="field-group">
+                  <span>Est. time (min)</span>
+                  <input
+                    type="number"
+                    min="5"
+                    step="5"
+                    value={taskForm.estTime}
+                    onChange={(event) =>
+                      setTaskForm({ ...taskForm, estTime: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="field-group">
+                <span>Notes</span>
+                <textarea
+                  rows="4"
+                  value={taskForm.notes}
+                  onChange={(event) =>
+                    setTaskForm({ ...taskForm, notes: event.target.value })
+                  }
+                  placeholder="Add any important notes..."
+                />
+              </label>
+            </>
+          )}
+
+          {isAssignment && (
+            <>
+              <div className="two-field-grid">
+                <label className="field-group">
+                  <span>Subject</span>
+                  <input
+                    type="text"
+                    value={assignmentForm.subject}
+                    onChange={(event) =>
+                      setAssignmentForm({
+                        ...assignmentForm,
+                        subject: event.target.value,
+                      })
+                    }
+                    placeholder="Computer Science"
+                  />
+                </label>
+
+                <label className="field-group">
+                  <span>Progress (%)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={assignmentForm.progress}
+                    onChange={(event) =>
+                      setAssignmentForm({
+                        ...assignmentForm,
+                        progress: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="field-group">
+                <span>Assignment title</span>
+                <input
+                  type="text"
+                  value={assignmentForm.title}
+                  onChange={(event) =>
+                    setAssignmentForm({ ...assignmentForm, title: event.target.value })
+                  }
+                  placeholder="Research paper"
+                  required
+                />
+              </label>
+
+              <label className="field-group">
+                <span>Due date</span>
+                <input
+                  type="date"
+                  value={assignmentForm.dueDate}
+                  onChange={(event) =>
+                    setAssignmentForm({
+                      ...assignmentForm,
+                      dueDate: event.target.value,
+                    })
+                  }
+                />
+              </label>
+
+              <label className="field-group">
+                <span>Description</span>
+                <textarea
+                  rows="4"
+                  value={assignmentForm.description}
+                  onChange={(event) =>
+                    setAssignmentForm({
+                      ...assignmentForm,
+                      description: event.target.value,
+                    })
+                  }
+                  placeholder="Add a brief description..."
+                />
+              </label>
+            </>
+          )}
+
+          {isSkill && (
+            <>
+              <label className="field-group">
+                <span>Skill name</span>
+                <input
+                  type="text"
+                  value={skillForm.name}
+                  onChange={(event) =>
+                    setSkillForm({ ...skillForm, name: event.target.value })
+                  }
+                  placeholder="React Native"
+                  required
+                />
+              </label>
+
+              <label className="field-group">
+                <span>Category</span>
+                <select
+                  value={skillForm.category}
+                  onChange={(event) =>
+                    setSkillForm({ ...skillForm, category: event.target.value })
+                  }
+                >
+                  <option>Programming</option>
+                  <option>Development</option>
+                  <option>Design</option>
+                  <option>Languages</option>
+                </select>
+              </label>
+
+              <label className="field-group">
+                <span>Notes</span>
+                <textarea
+                  rows="4"
+                  value={skillForm.notes}
+                  onChange={(event) =>
+                    setSkillForm({ ...skillForm, notes: event.target.value })
+                  }
+                  placeholder="What do you want to learn?"
+                />
+              </label>
+            </>
+          )}
+
+          {isGoal && (
+            <>
+              <label className="field-group">
+                <span>Goal title</span>
+                <input
+                  type="text"
+                  value={goalForm.title}
+                  onChange={(event) =>
+                    setGoalForm({ ...goalForm, title: event.target.value })
+                  }
+                  placeholder="Finish JavaScript course"
+                  required
+                />
+              </label>
+
+              <div className="two-field-grid">
+                <label className="field-group">
+                  <span>Timeframe</span>
+                  <select
+                    value={goalForm.timeframe}
+                    onChange={(event) =>
+                      setGoalForm({ ...goalForm, timeframe: event.target.value })
+                    }
+                  >
+                    <option>Weekly</option>
+                    <option>Monthly</option>
+                    <option>Long-term</option>
+                  </select>
+                </label>
+
+                <label className="field-group">
+                  <span>Category</span>
+                  <select
+                    value={goalForm.category}
+                    onChange={(event) =>
+                      setGoalForm({ ...goalForm, category: event.target.value })
+                    }
+                  >
+                    <option>Growth</option>
+                    <option>Career</option>
+                    <option>Learning</option>
+                    <option>Health</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="two-field-grid">
+                <label className="field-group">
+                  <span>Progress (%)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={goalForm.progress}
+                    onChange={(event) =>
+                      setGoalForm({ ...goalForm, progress: event.target.value })
+                    }
+                  />
+                </label>
+
+                <label className="field-group">
+                  <span>Target date</span>
+                  <input
+                    type="date"
+                    value={goalForm.targetDate}
+                    onChange={(event) =>
+                      setGoalForm({ ...goalForm, targetDate: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            </>
+          )}
+
+          {isNote && (
+            <>
+              <label className="field-group">
+                <span>Note title</span>
+                <input
+                  type="text"
+                  value={noteForm.title}
+                  onChange={(event) =>
+                    setNoteForm({ ...noteForm, title: event.target.value })
+                  }
+                  placeholder="Study focus"
+                  required
+                />
+              </label>
+
+              <label className="field-group">
+                <span>Category</span>
+                <select
+                  value={noteForm.category}
+                  onChange={(event) =>
+                    setNoteForm({ ...noteForm, category: event.target.value })
+                  }
+                >
+                  <option>Journal</option>
+                  <option>Ideas</option>
+                  <option>Reflection</option>
+                </select>
+              </label>
+
+              <label className="field-group">
+                <span>Write your note</span>
+                <textarea
+                  rows="6"
+                  value={noteForm.content}
+                  onChange={(event) =>
+                    setNoteForm({ ...noteForm, content: event.target.value })
+                  }
+                  placeholder="Write down your thoughts..."
+                  required
+                />
+              </label>
+            </>
+          )}
+
+          <div className="panel-actions">
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="primary-button orange">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BigMetric({ label, value, suffix, color }) {
+  return (
+    <div className="big-metric">
+      <div className="progress-header">
+        <span>{label}</span>
+        <strong>{value}{suffix}</strong>
+      </div>
+
+      <div className="progress-track">
+        <div
+          className={`progress-fill ${color}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
