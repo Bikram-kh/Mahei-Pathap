@@ -1953,6 +1953,521 @@ select:focus-visible {
 }
 
 /* =========================================================
+   DONATION PAGE
+========================================================= */
+
+.donation-section {
+  padding: 24px;
+}
+
+.donation-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.donation-icon {
+  color: var(--orange);
+}
+
+.donation-header h2 {
+  margin: 12px 0 8px;
+  font-size: 24px;
+  color: var(--brown);
+  font-weight: 900;
+}
+
+.donation-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+.donation-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.qr-image {
+  max-width: 200px;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+
+.qr-label {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.donation-upi {
+  margin-bottom: 24px;
+}
+
+.upi-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.upi-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.upi-id-code {
+  background: #f7f2ff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-family: "Courier New", monospace;
+  font-size: 13px;
+  color: var(--brown);
+  border: 1px solid var(--border);
+  min-width: 200px;
+  word-break: break-all;
+}
+
+.copy-upi-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--brown);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.copy-upi-button:hover {
+  background: #fff5ee;
+  color: var(--orange);
+}
+
+.copy-tooltip {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.copy-feedback {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  color: var(--green);
+  font-size: 11px;
+}
+
+.donation-amount {
+  margin-bottom: 24px;
+}
+
+.donation-amount h4 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--brown);
+}
+
+.amount-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.amount-button {
+  padding: 10px 20px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--brown);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+  text-align: center;
+}
+
+.amount-button:hover {
+  background: #fffbf7;
+}
+
+.amount-button.selected {
+  background: var(--orange);
+  color: white;
+  border-color: var(--orange);
+  box-shadow: 0 4px 12px rgba(255, 140, 66, 0.15);
+}
+
+.custom-amount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff5ee;
+  border: 1px solid #f0e6dd;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.currency-symbol {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brown);
+  flex-shrink: 0;
+}
+
+.custom-amount-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--brown);
+  font-weight: 500;
+  outline: none;
+}
+
+.custom-amount-input::placeholder {
+  color: var(--muted);
+}
+
+.donate-upi-button {
+  background: linear-gradient(135deg, var(--coral), var(--orange));
+  border: none;
+  padding: 14px 24px;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 7px 20px rgba(255, 82, 82, 0.15);
+  transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.donate-upi-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(255, 82, 82, 0.2);
+}
+
+.donate-upi-button:active {
+  transform: translateY(0);
+}
+
+.donate-upi-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.donation-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--coral);
+  font-weight: 600;
+  padding: 10px;
+  background: #fff5ee;
+  border-radius: 10px;
+  border: 1px solid #ffe4d6;
+}
+
+.donation-warning svg {
+  flex-shrink: 0;
+}
+
+/* Responsive Donation */
+@media (max-width: 768px) {
+  .donation-upi {
+    padding: 0 8px;
+  }
+
+  .upi-id-code {
+    min-width: 140px;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .copy-upi-button {
+    padding: 8px 12px;
+    font-size: 10px;
+  }
+
+  .amount-grid {
+    justify-content: stretch;
+  }
+
+  .amount-button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .custom-amount {
+    padding: 8px 10px;
+  }
+
+  .currency-symbol {
+    font-size: 14px;
+  }
+
+  .custom-amount-input {
+    font-size: 13px;
+  }
+
+  .qr-image {
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 550px) {
+  .donation-section {
+    padding: 16px;
+  }
+
+  .donation-header h2 {
+    font-size: 20px;
+  }
+
+  .upi-id-code,
+  .copy-upi-button,
+  .amount-button,
+  .custom-amount-input {
+    font-size: 12px;
+  }
+
+  .amount-button {
+    padding: 8px 12px;
+  }
+
+  .copy-upi-button {
+    padding: 6px 10px;
+  }
+
+  .donate-upi-button {
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+}
+
+/* =========================================================
+   SUGGESTIONS PAGE
+========================================================= */
+
+.suggestion-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.section-title.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title.suggestion h3 {
+  display: grid;
+  align-items: center;
+  margin: 0;
+  color: var(--brown);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.section-dot.suggestion {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--purple);
+}
+
+.suggestion-intro {
+  margin: 0 0 24px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.suggestion-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.suggestion-textarea {
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  resize: vertical;
+  background: #fffaf7;
+}
+
+.anon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.anon-toggle-label {
+  font-weight: 700;
+  color: var(--brown);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.anon-toggle-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+  flex-wrap: wrap;
+}
+
+.anon-toggle-item {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: var(--brown);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.anon-toggle-item:hover {
+  background: #fffbf7;
+}
+
+.anon-toggle-item.selected {
+  background: var(--orange);
+  color: white;
+  border: none;
+}
+
+.suggestion-error {
+  margin: 8px 0 0;
+  color: var(--coral);
+  font-size: 12px;
+}
+
+.suggestion-submit {
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.suggestion-success {
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.success-icon {
+  display: block;
+  margin: 16px 0;
+  font-size: 36px;
+}
+
+.suggestion-resubmit {
+  margin-top: 16px;
+  padding: 12px 20px;
+}
+
+@media (min-width: 768px) {
+  .suggestion-header {
+    flex-direction: row;
+  }
+
+  .section-title.suggestion {
+    flex-direction: column;
+  }
+
+  .suggestion-intro {
+    text-align: left;
+  }
+
+  .suggestion-form {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .anon-toggle {
+    gap: 16px;
+  }
+
+  .anon-toggle-item {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 767px) {
+  .anon-toggle {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .anon-toggle-label {
+    margin-bottom: 4px;
+    text-align: left;
+  }
+
+  .anon-toggle-group {
+    flex-direction: row;
+  }
+
+  .anon-toggle-item {
+    font-size: 12px;
+    padding: 8px 12px;
+    min-width: 110px;
+  }
+}
+
+@media (max-width: 550px) {
+  .anon-toggle-group {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .anon-toggle-item {
+    width: 100%;
+    min-width: unset;
+  }
+}
+
+/* =========================================================
    MOBILE HEADER
 ========================================================= */
 
@@ -2271,4 +2786,37 @@ select:focus-visible {
   .analytics-hero h2 {
     font-size: 21px;
   }
+}
+
+/* =========================================================
+   ANNOUNCEMENTS DISMISS BUTTON FIX
+========================================================= */
+.announcement-dismiss-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  z-index: 10;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.announcement-dismiss-btn:hover {
+  background: rgba(255, 82, 82, 0.08);
+  color: var(--coral);
+}
+
+.announcement-dismiss-btn:active {
+  transform: scale(0.92);
 }

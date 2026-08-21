@@ -32,6 +32,11 @@ import {
   Moon,
   Save,
   LogOut,
+  Heart,
+  User,
+  MessageSquare,
+  Megaphone,
+  ShieldCheck,
 } from "lucide-react";
 
 import {
@@ -47,6 +52,12 @@ import {
   isAppwriteConfigured,
   Query,
 } from "./lib/appwrite";
+import { isAdminUser } from "./lib/auth";
+import AboutPage from "./components/AboutPage";
+import DonationPage from "./components/DonationPage";
+import SuggestionsPage from "./components/SuggestionsPage";
+import AnnouncementsPage from "./components/AnnouncementsPage";
+import AdminDashboard from "./components/AdminDashboard";
 
 /* =========================================================
    HELPERS
@@ -383,6 +394,7 @@ export default function App() {
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [userName, setUserName] = useState(
     localStorage.getItem("buddyspace_user") || "Bikram"
@@ -719,6 +731,8 @@ export default function App() {
         setAuthUser(currentUser);
         setUserName(currentUser.name || userName);
         setIsAuthenticated(true);
+        const admin = await isAdminUser();
+        setIsAdmin(admin);
         await migrateLegacyData(currentUser.$id);
         await syncUserDataFromAppwrite(currentUser.$id);
       })
@@ -844,6 +858,30 @@ export default function App() {
       color: "orange",
     },
     {
+      id: "about",
+      label: "About Me",
+      icon: User,
+      color: "purple",
+    },
+    {
+      id: "donation",
+      label: "Donation",
+      icon: Heart,
+      color: "coral",
+    },
+    {
+      id: "suggestions",
+      label: "Suggestions",
+      icon: MessageSquare,
+      color: "yellow",
+    },
+    {
+      id: "announcements",
+      label: "Announcements",
+      icon: Megaphone,
+      color: "blue",
+    },
+    {
       id: "tasks",
       label: "Tasks",
       icon: CheckSquare,
@@ -897,6 +935,12 @@ export default function App() {
       icon: Sun,
       color: "gold",
     },
+    ...(isAdmin ? [{
+      id: "admin",
+      label: "Admin Panel",
+      icon: ShieldCheck,
+      color: "coral",
+    }] : []),
   ];
 
   function navigate(page) {
@@ -1821,6 +1865,42 @@ export default function App() {
               learningProgress={learningProgress}
               navigate={navigate}
               toggleTask={toggleTask}
+            />
+          )}
+
+          {/* ABOUT ME */}
+          {activePage === "about" && (
+            <AboutPage
+              userName={userName}
+              authUser={authUser}
+              isAdmin={isAdmin}
+            />
+          )}
+
+          {/* DONATION */}
+          {activePage === "donation" && (
+            <DonationPage />
+          )}
+
+          {/* SUGGESTIONS */}
+          {activePage === "suggestions" && (
+            <SuggestionsPage
+              authUser={authUser}
+              userName={userName}
+            />
+          )}
+
+          {/* ANNOUNCEMENTS */}
+          {activePage === "announcements" && (
+            <AnnouncementsPage
+              authUser={authUser}
+            />
+          )}
+
+          {/* ADMIN */}
+          {activePage === "admin" && isAdmin && (
+            <AdminDashboard
+              authUser={authUser}
             />
           )}
 
