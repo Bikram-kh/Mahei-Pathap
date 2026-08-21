@@ -1994,8 +1994,8 @@ select:focus-visible {
   margin-bottom: 24px;
 }
 
-.qr-image {
-  max-width: 200px;
+.donation-qr img  {
+  max-width: 240px;
   width: 100%;
   height: auto;
   border-radius: 12px;
