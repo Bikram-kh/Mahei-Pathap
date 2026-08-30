@@ -82,9 +82,9 @@ export default function AboutPage({ userName, authUser }) {
               About Me
             </span>
 
-            <h2>{profile.name || userName || "BuddySpace Developer"}</h2>
+            <h2>{profile.name || userName || "Mahei-Pathap Developer"}</h2>
 
-            <p className="about-bio">{profile.bio || "Building BuddySpace with love for students."}</p>
+            <p className="about-bio">{profile.bio || "Building Mahei-Pathap with love for students."}</p>
 
             {profile.role && (
               <div className="about-meta">

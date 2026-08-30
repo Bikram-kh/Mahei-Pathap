@@ -1,4 +1,4 @@
-name: Deploy BuddySpace
+name: Deploy Mahei-Pathap
 
 on:
   push:

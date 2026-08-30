@@ -153,7 +153,7 @@ export default function AnnouncementsPage({ authUser }) {
             <h3><Megaphone size={18} /> Announcements</h3>
           </div>
           <p className="announcements-intro">
-            Stay updated with the latest news and important updates from BuddySpace.
+            Stay updated with the latest news and important updates from Mahei-Pathap.
           </p>
         </div>
 

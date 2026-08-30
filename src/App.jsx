@@ -397,7 +397,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [userName, setUserName] = useState(
-    localStorage.getItem("buddyspace_user") || "Bikram"
+    localStorage.getItem("mahei-pathap_user") || "Bikram"
   );
 
   const [tasks, setTasks] = useState(defaultTasks);
@@ -405,7 +405,7 @@ export default function App() {
   const [assignments, setAssignments] = useState(defaultAssignments);
 
   const [skills, setSkills] = useState(
-    loadData("buddyspace_skills", defaultSkills)
+    loadData("mahei-pathap_skills", defaultSkills)
   );
 
   const [goals, setGoals] = useState(defaultGoals);
@@ -542,7 +542,7 @@ export default function App() {
 
     const migrationMap = [
       {
-        key: "buddyspace_tasks",
+        key: "mahei-pathap_tasks",
         collectionId: APPWRITE_TASKS_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -556,7 +556,7 @@ export default function App() {
         }),
       },
       {
-        key: "buddyspace_assignments",
+        key: "mahei-pathap_assignments",
         collectionId: APPWRITE_ASSIGNMENTS_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -569,7 +569,7 @@ export default function App() {
         }),
       },
       {
-        key: "buddyspace_skills",
+        key: "mahei-pathap_skills",
         collectionId: APPWRITE_SKILLS_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -580,7 +580,7 @@ export default function App() {
         }),
       },
       {
-        key: "buddyspace_goals",
+        key: "mahei-pathap_goals",
         collectionId: APPWRITE_GOALS_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -592,7 +592,7 @@ export default function App() {
         }),
       },
       {
-        key: "buddyspace_focus",
+        key: "mahei-pathap_focus",
         collectionId: APPWRITE_FOCUS_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -602,7 +602,7 @@ export default function App() {
         }),
       },
       {
-        key: "buddyspace_notes",
+        key: "mahei-pathap_notes",
         collectionId: APPWRITE_NOTES_COLLECTION_ID,
         mapper: (item) => ({
           userId,
@@ -684,7 +684,7 @@ export default function App() {
           ID.unique(),
           authForm.email,
           authForm.password,
-          authForm.name || "BuddySpace User"
+authForm.name || "Mahei-Pathap User"
         );
       }
 
@@ -696,8 +696,8 @@ export default function App() {
       const currentUser = await account.get();
       setAuthUser(currentUser);
       setIsAuthenticated(true);
-      setUserName(currentUser.name || authForm.name || "BuddySpace User");
-      localStorage.setItem("buddyspace_user", currentUser.name || authForm.name || "BuddySpace User");
+      setUserName(currentUser.name || authForm.name || "Mahei-Pathap User");
+      localStorage.setItem("Mahei-Pathap_user", currentUser.name || authForm.name || "Mahei-Pathap User");
       await migrateLegacyData(currentUser.$id);
       await syncUserDataFromAppwrite(currentUser.$id);
     } catch (error) {
@@ -746,11 +746,11 @@ export default function App() {
   ========================================================= */
 
   useEffect(() => {
-    localStorage.setItem("buddyspace_user", userName);
+    localStorage.setItem("Mahei-Pathap_user", userName);
   }, [userName]);
 
   useEffect(() => {
-    saveData("buddyspace_skills", skills);
+    saveData("Mahei-Pathap_skills", skills);
   }, [skills]);
 
   /* =========================================================
@@ -1748,7 +1748,7 @@ export default function App() {
 
         <div className="brand-small">
           <span className="brand-logo">🌱</span>
-          <strong>BuddySpace</strong>
+          <strong>Mahei-Pathap</strong>
         </div>
 
         <span className="mobile-streak">
@@ -1765,8 +1765,8 @@ export default function App() {
             <div className="brand-logo">🌱</div>
 
             <div>
-              <h1>BuddySpace</h1>
-              <p>Your friendly companion</p>
+              <h1>Mahei-Pathap</h1>
+              <p>ꯑꯗꯣꯝꯒꯤ ꯃꯍꯩꯒꯤ ꯃꯥꯔꯨꯞ</p>
             </div>
 
             <button
@@ -2402,7 +2402,7 @@ function SkillsPage({
     <div className="page-stack">
       <PageIntro
         title="Skill Learning"
-        description="Learn skills and watch YouTube courses directly inside BuddySpace."
+        description="Learn skills and watch YouTube courses directly inside Mahei-Pathap."
         buttonText="Add New Skill"
         onClick={addSkill}
         icon={<Plus size={17} />}
@@ -3097,7 +3097,7 @@ function PageIntro({
   return (
     <div className="page-intro">
       <div>
-        <span className="section-label">✨ BuddySpace</span>
+        <span className="section-label">✨ Mahei-Pathap</span>
         <h2>{title}</h2>
         <p>{description}</p>
       </div>
@@ -3211,7 +3211,7 @@ function LoginPage({
           <div className="brand-logo">🌱</div>
 
           <div>
-            <h1>BuddySpace</h1>
+            <h1>Mahei-Pathap</h1>
             <p>Your study companion</p>
           </div>
         </div>
@@ -3335,7 +3335,7 @@ function CreatePanel({
       <div className="panel" onClick={(event) => event.stopPropagation()}>
         <div className="panel-header">
           <div>
-            <span className="section-label">✨ BuddySpace</span>
+            <span className="section-label">✨ Mahei-Pathap</span>
             <h3>{title}</h3>
           </div>
 

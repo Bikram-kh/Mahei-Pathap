@@ -65,7 +65,7 @@ export default function SuggestionsPage({ authUser, userName }) {
         <section className="card suggestion-success">
           <CheckCircle2 size={38} className="success-icon" />
           <h3>Thanks!</h3>
-          <p>Your suggestion has been sent to the BuddySpace team.</p>
+          <p>Your suggestion has been sent to the Mahei-Pathap team.</p>
           <button className="secondary-button suggestion-resubmit" onClick={() => setSubmitState("idle")}>
             Send another suggestion
           </button>
@@ -85,7 +85,7 @@ export default function SuggestionsPage({ authUser, userName }) {
         </div>
 
         <p className="suggestion-intro">
-          Have an idea to make BuddySpace better? Share your feedback with us!
+          Have an idea to make Mahei-Pathap better? Share your feedback with us!
         </p>
 
         <form className="suggestion-form" onSubmit={handleSubmit}>
@@ -94,7 +94,7 @@ export default function SuggestionsPage({ authUser, userName }) {
             <textarea
               value={suggestion}
               onChange={(e) => setSuggestion(e.target.value)}
-              placeholder="Share your idea for improving BuddySpace..."
+              placeholder="Share your idea for improving Mahei-Pathap..."
               rows={5}
               maxLength={1000}
               className="suggestion-textarea"

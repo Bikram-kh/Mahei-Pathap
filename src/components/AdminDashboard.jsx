@@ -995,7 +995,7 @@ export default function AdminDashboard() {
         <h2>Admin Dashboard</h2>
 
         <p>
-          Manage BuddySpace content and
+          Manage Mahei-Pathap content and
           student feedback.
         </p>
       </section>
@@ -1154,7 +1154,7 @@ export default function AdminDashboard() {
               <h3>Overview</h3>
 
               <p>
-                Welcome to the BuddySpace
+                Welcome to the Mahei-Pathap
                 administration dashboard.
               </p>
 
@@ -2018,7 +2018,7 @@ export default function AdminDashboard() {
                       onChange={
                         handleDonationChange
                       }
-                      placeholder="Your support helps BuddySpace..."
+                      placeholder="Your support helps Mahei-Pathap..."
                       rows={4}
                       style={{
                         width: "100%",

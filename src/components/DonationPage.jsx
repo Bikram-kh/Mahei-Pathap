@@ -68,7 +68,7 @@ export default function DonationPage() {
       return;
     }
 
-    const upiUri = `upi://pay?pa=${settings.upiId}&am=${amount}&cu=INR&tn=Donation%20to%20BuddySpace`;
+    const upiUri = `upi://pay?pa=${settings.upiId}&am=${amount}&cu=INR&tn=Donation%20to%20Mahei-Pathap`;
     window.open(upiUri, "_blank");
   };
 
@@ -93,9 +93,9 @@ export default function DonationPage() {
       <section className="card">
         <div className="donation-header">
           <Heart size={28} className="donation-icon" />
-          <h2>Support BuddySpace</h2>
+          <h2>Support Mahei-Pathap</h2>
           <p className="donation-subtitle">
-            {settings?.donationMessage || "Your support helps us keep improving BuddySpace for students."}
+            {settings?.donationMessage || "Your support helps us keep improving Mahei-Pathap for students."}
           </p>
         </div>
 
