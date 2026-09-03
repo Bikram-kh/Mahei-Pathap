@@ -747,6 +747,9 @@ export default function App() {
           await account.createVerification(
             `${window.location.origin}${window.location.pathname}`
           );
+          await account.updatePrefs({
+            emailVerificationPending: true,
+          });
         } catch (verificationError) {
           console.error("Email verification setup failed:", verificationError);
           setAuthError("Account created, but the verification email could not be sent. Please try again.");
@@ -774,10 +777,16 @@ export default function App() {
 
       const currentUser = await account.get();
 
-      if (!currentUser.emailVerification) {
+      if (!currentUser.emailVerification && currentUser.prefs?.emailVerificationPending) {
         await account.deleteSession("current");
         setAuthError("Please verify your email address before logging in.");
         return;
+      }
+
+      if (currentUser.emailVerification && currentUser.prefs?.emailVerificationPending) {
+        await account.updatePrefs({
+          emailVerificationPending: false,
+        });
       }
 
       // ✅ Allow login (email verification infrastructure is in place for future use)
@@ -808,7 +817,7 @@ export default function App() {
       return;
     }
 
-    const redirectUrl = window.location.origin;
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
     const failureUrl = `${redirectUrl}?authError=google`;
 
     account.createOAuth2Session("google", redirectUrl, failureUrl);
