@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Search,
   Check,
+  ChevronLeft,
   AlertCircle,
   Youtube,
   Trophy,
@@ -53,6 +54,13 @@ import {
   Query,
 } from "./lib/appwrite";
 import { isAdminUser } from "./lib/auth";
+import {
+  validatePassword,
+  getPasswordStrengthLevel,
+  getPasswordStrengthColor,
+  validateSignupForm,
+} from "./lib/validators";
+import { useGoogleReCaptcha } from "./lib/recaptcha.jsx";
 import AboutPage from "./components/AboutPage";
 import DonationPage from "./components/DonationPage";
 import SuggestionsPage from "./components/SuggestionsPage";
@@ -63,7 +71,14 @@ import AdminDashboard from "./components/AdminDashboard";
    HELPERS
 ========================================================= */
 
-const today = new Date().toISOString().split("T")[0];
+function getLocalDateString(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+const today = getLocalDateString();
 
 function createId() {
   return Date.now() + Math.floor(Math.random() * 1000);
@@ -144,6 +159,19 @@ function loadData(key, fallback) {
 
 function saveData(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getSkillsStorageKey(userId) {
+  return userId ? `mahei-pathap_skills_${userId}` : "mahei-pathap_skills";
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 21) return "Good evening";
+  return "Good night";
 }
 
 function getYouTubeId(url) {
@@ -373,6 +401,9 @@ function createNoteDraft() {
 ========================================================= */
 
 export default function App() {
+  // Get reCAPTCHA hook for bot protection
+  const { executeRecaptcha } = useGoogleReCaptcha() || {};
+
   const [activePage, setActivePage] = useState("dashboard");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [panelType, setPanelType] = useState(null);
@@ -388,8 +419,13 @@ export default function App() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   });
   const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState(null);
   const [reviewStatus, setReviewStatus] = useState("");
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -404,8 +440,8 @@ export default function App() {
 
   const [assignments, setAssignments] = useState(defaultAssignments);
 
-  const [skills, setSkills] = useState(
-    loadData("mahei-pathap_skills", defaultSkills)
+  const [skills, setSkills] = useState(() =>
+    isAppwriteConfigured ? [] : loadData("mahei-pathap_skills", defaultSkills)
   );
 
   const [goals, setGoals] = useState(defaultGoals);
@@ -569,17 +605,6 @@ export default function App() {
         }),
       },
       {
-        key: "mahei-pathap_skills",
-        collectionId: APPWRITE_SKILLS_COLLECTION_ID,
-        mapper: (item) => ({
-          userId,
-          name: item.name || "Untitled skill",
-          category: item.category || "Programming",
-          notes: item.notes || "",
-          videos: encodeVideosForAppwrite(item.videos),
-        }),
-      },
-      {
         key: "mahei-pathap_goals",
         collectionId: APPWRITE_GOALS_COLLECTION_ID,
         mapper: (item) => ({
@@ -671,6 +696,8 @@ export default function App() {
   async function handleAuthSubmit(event) {
     event.preventDefault();
     setAuthError("");
+    setAuthSuccess("");
+    setEmailVerificationSent(false);
 
     try {
       if (!isAppwriteConfigured) {
@@ -679,30 +706,112 @@ export default function App() {
         return;
       }
 
+      // Get reCAPTCHA token for bot protection
+      let token = null;
+      const action = authMode === "signup" ? "signup" : "login";
+      if (executeRecaptcha) {
+        try {
+          token = await executeRecaptcha(action);
+          setRecaptchaToken(token);
+          console.log(`reCAPTCHA token obtained for ${action}`);
+        } catch (recaptchaError) {
+          console.error("reCAPTCHA error:", recaptchaError);
+          setAuthError("Security verification failed. Please try again.");
+          return;
+        }
+      }
+
       if (authMode === "signup") {
+        // Validate signup form
+        const validation = validateSignupForm(authForm);
+        if (!validation.isValid) {
+          const errorMessages = Object.values(validation.errors).join("\n");
+          setAuthError(errorMessages);
+          return;
+        }
+
+        // Create user account
         await account.create(
           ID.unique(),
           authForm.email,
           authForm.password,
-authForm.name || "Mahei-Pathap User"
+          authForm.name
         );
+
+        // Appwrite requires an authenticated session to send verification email.
+        try {
+          await account.createEmailPasswordSession(
+            authForm.email,
+            authForm.password
+          );
+          await account.createVerification(
+            `${window.location.origin}${window.location.pathname}`
+          );
+        } catch (verificationError) {
+          console.error("Email verification setup failed:", verificationError);
+          setAuthError("Account created, but the verification email could not be sent. Please try again.");
+          return;
+        } finally {
+          try {
+            await account.deleteSession("current");
+          } catch (sessionError) {
+            console.error("Failed to close signup session:", sessionError);
+          }
+        }
+
+        setEmailVerificationSent(true);
+        setAuthSuccess("Verification email sent to your email. Please check your spam folder too, then verify your address before logging in.");
+        setAuthForm({ name: "", email: "", password: "", confirmPassword: "" });
+        setPasswordStrength(0);
+        return;
       }
 
+      // Login flow (works for both signup and login attempts)
       await account.createEmailPasswordSession(
         authForm.email,
         authForm.password
       );
 
       const currentUser = await account.get();
+
+      if (!currentUser.emailVerification) {
+        await account.deleteSession("current");
+        setAuthError("Please verify your email address before logging in.");
+        return;
+      }
+
+      // ✅ Allow login (email verification infrastructure is in place for future use)
       setAuthUser(currentUser);
+      setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
       setIsAuthenticated(true);
       setUserName(currentUser.name || authForm.name || "Mahei-Pathap User");
       localStorage.setItem("Mahei-Pathap_user", currentUser.name || authForm.name || "Mahei-Pathap User");
       await migrateLegacyData(currentUser.$id);
       await syncUserDataFromAppwrite(currentUser.$id);
     } catch (error) {
-      setAuthError(error.message || "Authentication failed.");
+      // More specific error messages
+      if (error.message?.includes("user already exists")) {
+        setAuthError("This email is already registered. Please login or use a different email.");
+      } else if (error.message?.includes("Invalid credentials")) {
+        setAuthError("Invalid email or password. Please try again.");
+      } else if (error.message?.includes("user_email_already_exists")) {
+        setAuthError("This email is already in use. Please login or use a different email.");
+      } else {
+        setAuthError(error.message || "Authentication failed. Please try again.");
+      }
     }
+  }
+
+  function handleGoogleSignIn() {
+    if (!isAppwriteConfigured) {
+      setAuthError("Google sign-in requires Appwrite configuration.");
+      return;
+    }
+
+    const redirectUrl = window.location.origin;
+    const failureUrl = `${redirectUrl}?authError=google`;
+
+    account.createOAuth2Session("google", redirectUrl, failureUrl);
   }
 
   async function logout() {
@@ -716,11 +825,37 @@ authForm.name || "Mahei-Pathap User"
 
     setAuthUser(null);
     setIsAuthenticated(false);
-    setAuthForm({ name: "", email: "", password: "" });
+    setAuthForm({ name: "", email: "", password: "", confirmPassword: "" });
     setAuthError("");
+    setAuthSuccess("");
+    setPasswordStrength(0);
+    setEmailVerificationSent(false);
   }
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const authErrorCode = searchParams.get("authError");
+    const verificationUserId = searchParams.get("userId");
+    const verificationSecret = searchParams.get("secret");
+
+    if (authErrorCode === "google") {
+      setAuthError("Google sign-in was cancelled or failed. Please try again.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (verificationUserId && verificationSecret) {
+      account
+        .updateVerification(verificationUserId, verificationSecret)
+        .then(() => {
+          setAuthSuccess("Your email is verified. You can now log in.");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch(() => {
+          setAuthError("This verification link is invalid or has expired. Please request a new one.");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        });
+    }
+
     if (!isAppwriteConfigured) {
       setIsAuthenticated(true);
       return;
@@ -729,6 +864,7 @@ authForm.name || "Mahei-Pathap User"
     account.get()
       .then(async (currentUser) => {
         setAuthUser(currentUser);
+        setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
         setUserName(currentUser.name || userName);
         setIsAuthenticated(true);
         const admin = await isAdminUser();
@@ -750,8 +886,10 @@ authForm.name || "Mahei-Pathap User"
   }, [userName]);
 
   useEffect(() => {
-    saveData("Mahei-Pathap_skills", skills);
-  }, [skills]);
+    if (isAppwriteConfigured && !authUser) return;
+
+    saveData(getSkillsStorageKey(authUser?.$id), skills);
+  }, [skills, authUser]);
 
   /* =========================================================
      POMODORO
@@ -858,30 +996,6 @@ authForm.name || "Mahei-Pathap User"
       color: "orange",
     },
     {
-      id: "about",
-      label: "About Me",
-      icon: User,
-      color: "purple",
-    },
-    {
-      id: "donation",
-      label: "Donation",
-      icon: Heart,
-      color: "coral",
-    },
-    {
-      id: "suggestions",
-      label: "Suggestions",
-      icon: MessageSquare,
-      color: "yellow",
-    },
-    {
-      id: "announcements",
-      label: "Announcements",
-      icon: Megaphone,
-      color: "blue",
-    },
-    {
       id: "tasks",
       label: "Tasks",
       icon: CheckSquare,
@@ -934,6 +1048,30 @@ authForm.name || "Mahei-Pathap User"
       label: "Daily Review",
       icon: Sun,
       color: "gold",
+    },
+    {
+      id: "about",
+      label: "About Me",
+      icon: User,
+      color: "purple",
+    },
+    {
+      id: "donation",
+      label: "Donation",
+      icon: Heart,
+      color: "coral",
+    },
+    {
+      id: "suggestions",
+      label: "Suggestions",
+      icon: MessageSquare,
+      color: "yellow",
+    },
+    {
+      id: "announcements",
+      label: "Announcements",
+      icon: Megaphone,
+      color: "blue",
     },
     ...(isAdmin ? [{
       id: "admin",
@@ -1727,8 +1865,13 @@ authForm.name || "Mahei-Pathap User"
         authForm={authForm}
         setAuthForm={setAuthForm}
         authError={authError}
+        authSuccess={authSuccess}
         onSubmit={handleAuthSubmit}
+        onGoogleSignIn={handleGoogleSignIn}
         isAppwriteConfigured={isAppwriteConfigured}
+        passwordStrength={passwordStrength}
+        setPasswordStrength={setPasswordStrength}
+        emailVerificationSent={emailVerificationSent}
       />
     );
   }
@@ -2071,6 +2214,7 @@ function Dashboard({
   toggleTask,
 }) {
   const pending = tasks.filter((task) => task.status !== "Completed");
+  const greeting = getGreeting();
 
   return (
     <div className="page-stack">
@@ -2086,7 +2230,7 @@ function Dashboard({
             })}
           </span>
 
-          <h1>Good morning, {userName}! ☀️</h1>
+          <h1>{greeting}, {userName}!</h1>
 
           <p>
             You have <strong>{pending.length} tasks</strong> waiting and{" "}
@@ -2616,10 +2760,14 @@ function GoalsPage({ goals, addGoal, increaseGoal, deleteGoal }) {
 ========================================================= */
 
 function CalendarPage({ tasks, assignments }) {
-  const date = new Date();
+  const todayDate = new Date();
+  const [viewDate, setViewDate] = useState(
+    new Date(todayDate.getFullYear(), todayDate.getMonth(), 1)
+  );
+  const [selectedDate, setSelectedDate] = useState(today);
 
-  const year = date.getFullYear();
-  const month = date.getMonth();
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
@@ -2629,16 +2777,26 @@ function CalendarPage({ tasks, assignments }) {
 
   const events = [...tasks, ...assignments];
 
-  function hasEvent(day) {
-    const dateString = `${year}-${String(month + 1).padStart(
-      2,
-      "0"
-    )}-${String(day).padStart(2, "0")}`;
+  function getDateString(day) {
+    return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
 
-    return events.some(
+  function getEventsForDate(dateString) {
+    return events.filter(
       (item) => item.deadline === dateString || item.dueDate === dateString
     );
   }
+
+  function changeMonth(offset) {
+    setViewDate(new Date(year, month + offset, 1));
+  }
+
+  function goToToday() {
+    setViewDate(new Date(todayDate.getFullYear(), todayDate.getMonth(), 1));
+    setSelectedDate(today);
+  }
+
+  const selectedEvents = getEventsForDate(selectedDate);
 
   return (
     <div className="page-stack">
@@ -2647,14 +2805,32 @@ function CalendarPage({ tasks, assignments }) {
           <div>
             <span className="section-label">📅 Your schedule</span>
             <h3>
-              {date.toLocaleDateString(undefined, {
+              {viewDate.toLocaleDateString(undefined, {
                 month: "long",
                 year: "numeric",
               })}
             </h3>
           </div>
 
-          <span className="tag blue">Tasks + Assignments</span>
+          <div className="calendar-controls">
+            <button
+              className="icon-button"
+              onClick={() => changeMonth(-1)}
+              aria-label="Previous month"
+              title="Previous month"
+            >
+              <ChevronLeft size={17} />
+            </button>
+            <button className="calendar-today" onClick={goToToday}>Today</button>
+            <button
+              className="icon-button"
+              onClick={() => changeMonth(1)}
+              aria-label="Next month"
+              title="Next month"
+            >
+              <ChevronRight size={17} />
+            </button>
+          </div>
         </div>
 
         <div className="calendar-grid">
@@ -2672,19 +2848,42 @@ function CalendarPage({ tasks, assignments }) {
 
           {Array.from({ length: daysInMonth }).map((_, index) => {
             const day = index + 1;
-            const isToday = day === date.getDate();
+            const dateString = getDateString(day);
+            const isToday = dateString === today;
+            const isSelected = dateString === selectedDate;
+            const dayEvents = getEventsForDate(dateString);
 
             return (
-              <div
-                className={`calendar-day ${isToday ? "today" : ""}`}
+              <button
+                className={`calendar-day ${isToday ? "today" : ""} ${isSelected ? "selected" : ""}`}
                 key={day}
+                onClick={() => setSelectedDate(dateString)}
+                aria-label={`${dateString}${dayEvents.length ? `, ${dayEvents.length} events` : ""}`}
               >
                 <span>{day}</span>
 
-                {hasEvent(day) && <i />}
-              </div>
+                {dayEvents.length > 0 && <i />}
+              </button>
             );
           })}
+        </div>
+
+        <div className="selected-day-events">
+          <div className="selected-day-heading">
+            <strong>{formatDate(selectedDate)}</strong>
+            <span>{selectedEvents.length} {selectedEvents.length === 1 ? "event" : "events"}</span>
+          </div>
+          {selectedEvents.length === 0 ? (
+            <p className="calendar-no-events">No tasks or assignments for this day.</p>
+          ) : (
+            selectedEvents.map((item) => (
+              <div className="calendar-event-row" key={`${item.id}-${item.title}`}>
+                <span className={item.deadline ? "event-dot task-dot" : "event-dot assignment-dot"} />
+                <strong>{item.title}</strong>
+                <span>{item.deadline ? "Task" : "Assignment"}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -3201,8 +3400,13 @@ function LoginPage({
   authForm,
   setAuthForm,
   authError,
+  authSuccess,
   onSubmit,
+  onGoogleSignIn,
   isAppwriteConfigured,
+  passwordStrength,
+  setPasswordStrength,
+  emailVerificationSent,
 }) {
   return (
     <div className="login-shell">
@@ -3267,13 +3471,49 @@ function LoginPage({
             <input
               type="password"
               value={authForm.password}
-              onChange={(event) =>
-                setAuthForm({ ...authForm, password: event.target.value })
-              }
+              onChange={(event) => {
+                const newPassword = event.target.value;
+                setAuthForm({ ...authForm, password: newPassword });
+                if (authMode === "signup") {
+                  const validation = validatePassword(newPassword);
+                  setPasswordStrength(validation.strength);
+                }
+              }}
               placeholder="******"
               required
             />
+            {authMode === "signup" && authForm.password && (
+              <div className="password-strength-container">
+                <div className="password-strength-bar">
+                  <div
+                    className="password-strength-fill"
+                    style={{
+                      width: `${passwordStrength}%`,
+                      backgroundColor: getPasswordStrengthColor(passwordStrength),
+                    }}
+                  />
+                </div>
+                <span className="password-strength-text" style={{ color: getPasswordStrengthColor(passwordStrength) }}>
+                  {getPasswordStrengthLevel(passwordStrength)}
+                </span>
+              </div>
+            )}
           </label>
+
+          {authMode === "signup" && (
+            <label className="field-group">
+              <span>Confirm Password</span>
+              <input
+                type="password"
+                value={authForm.confirmPassword}
+                onChange={(event) =>
+                  setAuthForm({ ...authForm, confirmPassword: event.target.value })
+                }
+                placeholder="Confirm your password"
+                required
+              />
+            </label>
+          )}
 
           {!isAppwriteConfigured && (
             <p className="auth-hint">
@@ -3281,11 +3521,40 @@ function LoginPage({
             </p>
           )}
 
+          {emailVerificationSent && (
+            <p className="auth-success">
+              {authSuccess || "Check your email to verify your address."}
+            </p>
+          )}
+
+          {!emailVerificationSent && authSuccess && (
+            <p className="auth-success">{authSuccess}</p>
+          )}
+
           {authError && <p className="auth-error">{authError}</p>}
 
           <button type="submit" className="primary-button orange full-width">
             {authMode === "login" ? "Login" : "Create account"}
           </button>
+
+          <div className="auth-divider"><span>or</span></div>
+
+          <button
+            type="button"
+            className="google-button full-width"
+            onClick={onGoogleSignIn}
+          >
+            <strong>G</strong>
+            Continue with Google
+          </button>
+
+          <p className="recaptcha-notice">
+            This site is protected by reCAPTCHA and the Google
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer"> Privacy Policy</a>
+            and
+            <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer"> Terms of Service</a>
+            apply.
+          </p>
         </form>
       </div>
     </div>
