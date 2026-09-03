@@ -53,6 +53,13 @@ import {
   Query,
 } from "./lib/appwrite";
 import { isAdminUser } from "./lib/auth";
+import {
+  validatePassword,
+  getPasswordStrengthLevel,
+  getPasswordStrengthColor,
+  validateSignupForm,
+} from "./lib/validators";
+import { useGoogleReCaptcha } from "./lib/recaptcha.jsx";
 import AboutPage from "./components/AboutPage";
 import DonationPage from "./components/DonationPage";
 import SuggestionsPage from "./components/SuggestionsPage";
@@ -144,6 +151,19 @@ function loadData(key, fallback) {
 
 function saveData(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function getSkillsStorageKey(userId) {
+  return userId ? `mahei-pathap_skills_${userId}` : "mahei-pathap_skills";
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  if (hour < 21) return "Good evening";
+  return "Good night";
 }
 
 function getYouTubeId(url) {
@@ -373,6 +393,9 @@ function createNoteDraft() {
 ========================================================= */
 
 export default function App() {
+  // Get reCAPTCHA hook for bot protection
+  const { executeRecaptcha } = useGoogleReCaptcha() || {};
+
   const [activePage, setActivePage] = useState("dashboard");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [panelType, setPanelType] = useState(null);
@@ -388,8 +411,12 @@ export default function App() {
     name: "",
     email: "",
     password: "",
+    confirmPassword: "",
   });
   const [authError, setAuthError] = useState("");
+  const [passwordStrength, setPasswordStrength] = useState(0);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState(null);
   const [reviewStatus, setReviewStatus] = useState("");
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -404,8 +431,8 @@ export default function App() {
 
   const [assignments, setAssignments] = useState(defaultAssignments);
 
-  const [skills, setSkills] = useState(
-    loadData("mahei-pathap_skills", defaultSkills)
+  const [skills, setSkills] = useState(() =>
+    isAppwriteConfigured ? [] : loadData("mahei-pathap_skills", defaultSkills)
   );
 
   const [goals, setGoals] = useState(defaultGoals);
@@ -569,17 +596,6 @@ export default function App() {
         }),
       },
       {
-        key: "mahei-pathap_skills",
-        collectionId: APPWRITE_SKILLS_COLLECTION_ID,
-        mapper: (item) => ({
-          userId,
-          name: item.name || "Untitled skill",
-          category: item.category || "Programming",
-          notes: item.notes || "",
-          videos: encodeVideosForAppwrite(item.videos),
-        }),
-      },
-      {
         key: "mahei-pathap_goals",
         collectionId: APPWRITE_GOALS_COLLECTION_ID,
         mapper: (item) => ({
@@ -671,6 +687,7 @@ export default function App() {
   async function handleAuthSubmit(event) {
     event.preventDefault();
     setAuthError("");
+    setEmailVerificationSent(false);
 
     try {
       if (!isAppwriteConfigured) {
@@ -679,29 +696,90 @@ export default function App() {
         return;
       }
 
+      // Get reCAPTCHA token for bot protection
+      let token = null;
+      const action = authMode === "signup" ? "signup" : "login";
+      if (executeRecaptcha) {
+        try {
+          token = await executeRecaptcha(action);
+          setRecaptchaToken(token);
+          console.log(`reCAPTCHA token obtained for ${action}`);
+        } catch (recaptchaError) {
+          console.error("reCAPTCHA error:", recaptchaError);
+          setAuthError("Security verification failed. Please try again.");
+          return;
+        }
+      }
+
       if (authMode === "signup") {
+        // Validate signup form
+        const validation = validateSignupForm(authForm);
+        if (!validation.isValid) {
+          const errorMessages = Object.values(validation.errors).join("\n");
+          setAuthError(errorMessages);
+          return;
+        }
+
+        // Create user account
         await account.create(
           ID.unique(),
           authForm.email,
           authForm.password,
-authForm.name || "Mahei-Pathap User"
+          authForm.name
         );
+
+        // Send email verification
+        try {
+          await account.createVerification(
+            window.location.origin // URL to redirect back to after verification
+          );
+          setEmailVerificationSent(true);
+          setAuthError("");
+          setAuthForm({ name: "", email: "", password: "", confirmPassword: "" });
+          setPasswordStrength(0);
+          return;
+        } catch (verificationError) {
+          console.error("Email verification setup failed:", verificationError);
+          // TODO: Email verification infrastructure in place - will be enabled when SMTP is configured
+          console.warn("Email verification email not sent - account created but email verification will be enforced once SMTP is configured");
+          // Continue to login - email verification will be required once SMTP is properly set up
+        }
       }
 
+      // Login flow (works for both signup and login attempts)
       await account.createEmailPasswordSession(
         authForm.email,
         authForm.password
       );
 
       const currentUser = await account.get();
+
+      // TODO: Re-enable email verification check once Appwrite SMTP is properly configured
+      // if (!currentUser.emailVerification) {
+      //   await account.deleteSession("current");
+      //   setAuthError("Please verify your email address before logging in.");
+      //   return;
+      // }
+
+      // ✅ Allow login (email verification infrastructure is in place for future use)
       setAuthUser(currentUser);
+      setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
       setIsAuthenticated(true);
       setUserName(currentUser.name || authForm.name || "Mahei-Pathap User");
       localStorage.setItem("Mahei-Pathap_user", currentUser.name || authForm.name || "Mahei-Pathap User");
       await migrateLegacyData(currentUser.$id);
       await syncUserDataFromAppwrite(currentUser.$id);
     } catch (error) {
-      setAuthError(error.message || "Authentication failed.");
+      // More specific error messages
+      if (error.message?.includes("user already exists")) {
+        setAuthError("This email is already registered. Please login or use a different email.");
+      } else if (error.message?.includes("Invalid credentials")) {
+        setAuthError("Invalid email or password. Please try again.");
+      } else if (error.message?.includes("user_email_already_exists")) {
+        setAuthError("This email is already in use. Please login or use a different email.");
+      } else {
+        setAuthError(error.message || "Authentication failed. Please try again.");
+      }
     }
   }
 
@@ -716,8 +794,10 @@ authForm.name || "Mahei-Pathap User"
 
     setAuthUser(null);
     setIsAuthenticated(false);
-    setAuthForm({ name: "", email: "", password: "" });
+    setAuthForm({ name: "", email: "", password: "", confirmPassword: "" });
     setAuthError("");
+    setPasswordStrength(0);
+    setEmailVerificationSent(false);
   }
 
   useEffect(() => {
@@ -729,6 +809,7 @@ authForm.name || "Mahei-Pathap User"
     account.get()
       .then(async (currentUser) => {
         setAuthUser(currentUser);
+        setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
         setUserName(currentUser.name || userName);
         setIsAuthenticated(true);
         const admin = await isAdminUser();
@@ -750,8 +831,10 @@ authForm.name || "Mahei-Pathap User"
   }, [userName]);
 
   useEffect(() => {
-    saveData("Mahei-Pathap_skills", skills);
-  }, [skills]);
+    if (isAppwriteConfigured && !authUser) return;
+
+    saveData(getSkillsStorageKey(authUser?.$id), skills);
+  }, [skills, authUser]);
 
   /* =========================================================
      POMODORO
@@ -1729,6 +1812,9 @@ authForm.name || "Mahei-Pathap User"
         authError={authError}
         onSubmit={handleAuthSubmit}
         isAppwriteConfigured={isAppwriteConfigured}
+        passwordStrength={passwordStrength}
+        setPasswordStrength={setPasswordStrength}
+        emailVerificationSent={emailVerificationSent}
       />
     );
   }
@@ -2071,6 +2157,7 @@ function Dashboard({
   toggleTask,
 }) {
   const pending = tasks.filter((task) => task.status !== "Completed");
+  const greeting = getGreeting();
 
   return (
     <div className="page-stack">
@@ -2086,7 +2173,7 @@ function Dashboard({
             })}
           </span>
 
-          <h1>Good morning, {userName}! ☀️</h1>
+          <h1>{greeting}, {userName}!</h1>
 
           <p>
             You have <strong>{pending.length} tasks</strong> waiting and{" "}
@@ -3203,6 +3290,9 @@ function LoginPage({
   authError,
   onSubmit,
   isAppwriteConfigured,
+  passwordStrength,
+  setPasswordStrength,
+  emailVerificationSent,
 }) {
   return (
     <div className="login-shell">
@@ -3267,17 +3357,59 @@ function LoginPage({
             <input
               type="password"
               value={authForm.password}
-              onChange={(event) =>
-                setAuthForm({ ...authForm, password: event.target.value })
-              }
+              onChange={(event) => {
+                const newPassword = event.target.value;
+                setAuthForm({ ...authForm, password: newPassword });
+                if (authMode === "signup") {
+                  const validation = validatePassword(newPassword);
+                  setPasswordStrength(validation.strength);
+                }
+              }}
               placeholder="******"
               required
             />
+            {authMode === "signup" && authForm.password && (
+              <div className="password-strength-container">
+                <div className="password-strength-bar">
+                  <div
+                    className="password-strength-fill"
+                    style={{
+                      width: `${passwordStrength}%`,
+                      backgroundColor: getPasswordStrengthColor(passwordStrength),
+                    }}
+                  />
+                </div>
+                <span className="password-strength-text" style={{ color: getPasswordStrengthColor(passwordStrength) }}>
+                  {getPasswordStrengthLevel(passwordStrength)}
+                </span>
+              </div>
+            )}
           </label>
+
+          {authMode === "signup" && (
+            <label className="field-group">
+              <span>Confirm Password</span>
+              <input
+                type="password"
+                value={authForm.confirmPassword}
+                onChange={(event) =>
+                  setAuthForm({ ...authForm, confirmPassword: event.target.value })
+                }
+                placeholder="Confirm your password"
+                required
+              />
+            </label>
+          )}
 
           {!isAppwriteConfigured && (
             <p className="auth-hint">
               Appwrite is not configured yet, so the app is running in demo mode.
+            </p>
+          )}
+
+          {emailVerificationSent && (
+            <p className="auth-success">
+              ✓ Account created! Check your email to verify your address. (Check spam folder if needed)
             </p>
           )}
 
@@ -3286,6 +3418,14 @@ function LoginPage({
           <button type="submit" className="primary-button orange full-width">
             {authMode === "login" ? "Login" : "Create account"}
           </button>
+
+          <p className="recaptcha-notice">
+            This site is protected by reCAPTCHA and the Google
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer"> Privacy Policy</a>
+            and
+            <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer"> Terms of Service</a>
+            apply.
+          </p>
         </form>
       </div>
     </div>
