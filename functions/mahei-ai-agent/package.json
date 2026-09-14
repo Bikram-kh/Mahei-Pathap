@@ -1,0 +1,8 @@
+{
+  "name": "mahei-ai-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "groq-sdk": "^0.37.0"
+  }
+}

@@ -1,0 +1,32 @@
+{
+    "projectId": "6a8413be0026f88b5dc8",
+    "functions": [
+        {
+            "$id": "mahei-ai-planner",
+            "name": "Mahei AI Planner",
+            "runtime": "node-26",
+            "path": "functions/mahei-ai-planner",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 30,
+            "commands": "npm install",
+            "scopes": [],
+            "installationId": "",
+            "providerRepositoryId": "",
+            "providerBranch": "",
+            "providerSilentMode": false,
+            "providerRootDirectory": "",
+            "providerBranches": [],
+            "providerPaths": [],
+            "buildSpecification": "s-2vcpu-2gb",
+            "runtimeSpecification": "s-0.5vcpu-512mb",
+            "deploymentRetention": 0
+        }
+    ]
+}

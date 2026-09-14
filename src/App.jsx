@@ -58,6 +58,9 @@ import {
   databases,
   isAppwriteConfigured,
   Query,
+  askAiCoach,
+  generateStudyPlan,
+  generateAiAgentAction,
 } from "./lib/appwrite";
 import { isAdminUser } from "./lib/auth";
 import {
@@ -80,14 +83,17 @@ import AdminDashboard from "./components/AdminDashboard";
 function getLocalDateString(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
     2,
-    "0"
+    "0",
   )}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 const today = getLocalDateString();
 const USER_NAME_STORAGE_KEY = "mahei-pathap_user";
-const DISCORD_INVITE_URL = import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/BmYmwRrheX";
-const DISCORD_LINK_FUNCTION_ENABLED = Boolean(APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID);
+const DISCORD_INVITE_URL =
+  import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/BmYmwRrheX";
+const DISCORD_LINK_FUNCTION_ENABLED = Boolean(
+  APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID,
+);
 
 function createId() {
   return Date.now() + Math.floor(Math.random() * 1000);
@@ -127,9 +133,7 @@ function normalizeVideoItem(video) {
 function mapVideosFromDocument(videos) {
   if (!Array.isArray(videos)) return [];
 
-  return videos
-    .map(normalizeVideoItem)
-    .filter(Boolean);
+  return videos.map(normalizeVideoItem).filter(Boolean);
 }
 
 function encodeVideosForAppwrite(videos) {
@@ -142,7 +146,7 @@ function encodeVideosForAppwrite(videos) {
       videoId: video.videoId || "",
       watched: Boolean(video.watched),
       notes: video.notes || "",
-    })
+    }),
   );
 }
 
@@ -445,16 +449,341 @@ export default function App() {
   const [discordLinkError, setDiscordLinkError] = useState("");
   const [discordLinkCopied, setDiscordLinkCopied] = useState(false);
   const [discordLinked, setDiscordLinked] = useState(false);
-const [discordUsername, setDiscordUsername] = useState("");
-const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
+  const [discordUsername, setDiscordUsername] = useState("");
+  const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [aiMessage, setAiMessage] = useState("");
+  const [aiReply, setAiReply] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [aiSubmittedMessage, setAiSubmittedMessage] = useState("");
+  const [studyPlan, setStudyPlan] = useState("");
+  const [studyPlanLoading, setStudyPlanLoading] = useState(false);
+  const [studyPlanError, setStudyPlanError] = useState("");
+  const [planInterviewActive, setPlanInterviewActive] = useState(false);
+  const [planInterviewStep, setPlanInterviewStep] = useState(0);
+  const [planInterviewAnswer, setPlanInterviewAnswer] = useState("");
+  const [planInterviewAnswers, setPlanInterviewAnswers] = useState([]);
+  const planInterviewQuestions = [
+    "Which subject do you want to study?",
+    "Which topic or chapter do you want to focus on?",
+    "What do you want to achieve in this topic?",
+    "How much time can you study today?",
+    "How confident are you with this topic right now?",
+    "Do you have any deadline, exam, or important date for this topic?",
+  ];
+
+  async function handleAiCoach() {
+    const message = aiMessage.trim();
+
+    if (!message || aiLoading) return;
+
+    setAiMessage("");
+    setAiLoading(true);
+    setAiReply("");
+    setAiError("");
+    setAiSubmittedMessage(message);
+
+    try {
+      const agentResult = await handleAiAgent(message);
+
+      if (agentResult.success && agentResult.action !== "none") {
+        setAiReply(agentResult.reply || "Action completed successfully.");
+        return;
+      }
+
+      const reply = await askAiCoach(message, {
+        currentDate: today,
+        tasks,
+        assignments,
+        skills,
+        goals,
+        focusHistory,
+      });
+
+      setAiReply(reply);
+    } catch (error) {
+      setAiError(error.message || "Unable to contact the AI Coach.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function handleAiKeyDown(event) {
+    if (event.key === "Enter" && event.ctrlKey) {
+      event.preventDefault();
+      handleAiCoach();
+    }
+  }
+
+  function handleQuickPrompt(prompt) {
+    setAiMessage(prompt);
+    setAiError("");
+  }
+
+  function clearAiCoach() {
+    setAiMessage("");
+    setAiReply("");
+    setAiError("");
+    setAiSubmittedMessage("");
+  }
+
+  const handleGenerateStudyPlan = async () => {
+    setStudyPlanLoading(true);
+    setStudyPlanError("");
+    setAiReply("Sure, I'll help you create a study plan.");
+
+    try {
+      const plan = await generateStudyPlan({
+        currentDate: new Date().toISOString().split("T")[0],
+        tasks,
+        assignments,
+        skills,
+        goals,
+        focusHistory,
+      });
+
+      setStudyPlan(plan);
+    } catch (error) {
+      console.error("Study Planner error:", error);
+      setStudyPlanError(error.message || "Failed to generate study plan.");
+    } finally {
+      setStudyPlanLoading(false);
+    }
+  };
+
+  const handlePlanInterviewSubmit = async () => {
+    const answer = planInterviewAnswer.trim();
+
+    if (!answer) return;
+
+    const completeAnswers = [...planInterviewAnswers, answer];
+
+    if (completeAnswers.length < planInterviewQuestions.length) {
+      setPlanInterviewAnswers(completeAnswers);
+      setPlanInterviewStep((prev) => prev + 1);
+      setPlanInterviewAnswer("");
+      return;
+    }
+
+    const interview = {
+      subject: completeAnswers[0],
+      topic: completeAnswers[1],
+      goal: completeAnswers[2],
+      time: completeAnswers[3],
+      confidence: completeAnswers[4],
+      deadline: completeAnswers[5],
+    };
+
+    setStudyPlanLoading(true);
+    setStudyPlanError("");
+    setAiReply(
+      "Thanks! I have everything I need. I'm creating a personalized study plan for you.",
+    );
+
+    try {
+      const plan = await generateStudyPlan({
+        currentDate: new Date().toISOString().split("T")[0],
+        tasks,
+        assignments,
+        skills,
+        goals,
+        focusHistory,
+        interview,
+      });
+
+      setStudyPlan(plan);
+      setPlanInterviewActive(false);
+      setPlanInterviewStep(0);
+      setPlanInterviewAnswer("");
+      setPlanInterviewAnswers([]);
+    } catch (error) {
+      console.error("Study Planner interview error:", error);
+      setStudyPlanError(error.message || "Failed to generate study plan.");
+    } finally {
+      setStudyPlanLoading(false);
+    }
+  };
+  const handleAddStudyPlanToTask = async () => {
+    console.log("TASK BUTTON CLICKED", {
+      studyPlan,
+      authUser,
+    });
+    if (!studyPlan || !authUser) return;
+
+    try {
+      const totalMatch = studyPlan.match(/TOTAL:\s*(\d+)\s*minutes?/i);
+      const estimatedMinutes = totalMatch ? Number(totalMatch[1]) : 30;
+
+      await databases.createDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_TASKS_COLLECTION_ID,
+        ID.unique(),
+        {
+          userId: authUser.$id,
+          title: "Today's AI Study Plan",
+          category: "College",
+          priority: "Medium",
+          deadline: new Date().toISOString().split("T")[0],
+          estTime: estimatedMinutes,
+          notes: studyPlan,
+          status: "Pending",
+        },
+      );
+
+      setAiReply("Today's study plan has been added to your Tasks.");
+    } catch (error) {
+      console.error("Add study plan to task error:", error);
+      setAiReply("I couldn't add the study plan to your Tasks.");
+    }
+  };
+
+  async function handleAiAgent(message) {
+    console.log("Testing AI Agent:", message);
+
+    try {
+      const result = await generateAiAgentAction(message, {
+        currentDate: today,
+        tasks,
+        assignments,
+        skills,
+        goals,
+        focusHistory,
+      });
+
+      console.log("AI Agent result:", result);
+
+      if (result.action === "create_task") {
+        const parameters = result.parameters || {};
+
+        const newTask = {
+          title: String(parameters.title || "").trim(),
+          category: parameters.category || "Learning",
+          priority: parameters.priority || "Medium",
+          deadline: parameters.deadline || today,
+          estTime: Number(parameters.estTime) || 30,
+          notes: parameters.notes || "",
+          status: "Pending",
+        };
+
+        if (!newTask.title) {
+          return {
+            ...result,
+            success: false,
+            reply: "I could not determine the task title.",
+          };
+        }
+
+        if (isAppwriteConfigured && authUser) {
+          const created = await databases.createDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_TASKS_COLLECTION_ID,
+            ID.unique(),
+            {
+              userId: authUser.$id,
+              ...newTask,
+            },
+          );
+
+          setTasks((items) => [mapTaskDocument(created), ...items]);
+
+          return {
+            ...result,
+            success: true,
+            reply: `Task "${newTask.title}" was added successfully.`,
+          };
+        }
+
+        setTasks((items) => [
+          {
+            id: createId(),
+            ...newTask,
+          },
+          ...items,
+        ]);
+
+        return {
+          ...result,
+          success: true,
+          reply: `Task "${newTask.title}" was added successfully.`,
+        };
+      }
+
+      if (result.action === "create_goal") {
+        const parameters = result.parameters || {};
+
+        const newGoal = {
+          title: String(parameters.title || "").trim(),
+          timeframe: parameters.timeframe || "Weekly",
+          category: parameters.category || "Growth",
+          progress: Number(parameters.progress) || 0,
+          targetDate: parameters.targetDate || today,
+        };
+
+        if (!newGoal.title) {
+          return {
+            ...result,
+            success: false,
+            reply: "I could not determine the goal title.",
+          };
+        }
+
+        if (isAppwriteConfigured && authUser) {
+          const created = await databases.createDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_GOALS_COLLECTION_ID,
+            ID.unique(),
+            {
+              userId: authUser.$id,
+              ...newGoal,
+            },
+          );
+
+          setGoals((items) => [mapGoalDocument(created), ...items]);
+
+          return {
+            ...result,
+            success: true,
+            reply: `Goal "${newGoal.title}" was created successfully.`,
+          };
+        }
+
+        setGoals((items) => [
+          {
+            id: createId(),
+            ...newGoal,
+          },
+          ...items,
+        ]);
+
+        return {
+          ...result,
+          success: true,
+          reply: `Goal "${newGoal.title}" was created successfully.`,
+        };
+      }
+
+      return result;
+
+      return result;
+    } catch (error) {
+      console.error("AI Agent error:", error);
+
+      return {
+        success: false,
+        action: "none",
+        parameters: {},
+        reply: error.message || "AI Agent request failed.",
+      };
+    }
+  }
 
   const [userName, setUserName] = useState(
     localStorage.getItem(USER_NAME_STORAGE_KEY) ||
       // Keep displaying a name saved by older releases, then migrate it to
       // the consistently named key on the next render.
       localStorage.getItem("Mahei-Pathap_user") ||
-      "Bikram"
+      "Bikram",
   );
 
   const [tasks, setTasks] = useState(defaultTasks);
@@ -462,7 +791,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   const [assignments, setAssignments] = useState(defaultAssignments);
 
   const [skills, setSkills] = useState(() =>
-    isAppwriteConfigured ? [] : loadData("mahei-pathap_skills", defaultSkills)
+    isAppwriteConfigured ? [] : loadData("mahei-pathap_skills", defaultSkills),
   );
 
   const [goals, setGoals] = useState(defaultGoals);
@@ -548,7 +877,11 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       const page = await databases.listDocuments(
         APPWRITE_DATABASE_ID,
         collectionId,
-        [Query.equal("userId", userId), Query.limit(pageSize), Query.offset(offset)]
+        [
+          Query.equal("userId", userId),
+          Query.limit(pageSize),
+          Query.offset(offset),
+        ],
       );
 
       pageDocuments = page.documents;
@@ -564,15 +897,21 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     if (!isAppwriteConfigured || !userId) return;
 
     try {
-      const [taskDocuments, assignmentDocuments, skillDocuments, goalDocuments, focusDocuments, noteDocuments] =
-        await Promise.all([
-          listUserDocuments(APPWRITE_TASKS_COLLECTION_ID, userId),
-          listUserDocuments(APPWRITE_ASSIGNMENTS_COLLECTION_ID, userId),
-          listUserDocuments(APPWRITE_SKILLS_COLLECTION_ID, userId),
-          listUserDocuments(APPWRITE_GOALS_COLLECTION_ID, userId),
-          listUserDocuments(APPWRITE_FOCUS_COLLECTION_ID, userId),
-          listUserDocuments(APPWRITE_NOTES_COLLECTION_ID, userId),
-        ]);
+      const [
+        taskDocuments,
+        assignmentDocuments,
+        skillDocuments,
+        goalDocuments,
+        focusDocuments,
+        noteDocuments,
+      ] = await Promise.all([
+        listUserDocuments(APPWRITE_TASKS_COLLECTION_ID, userId),
+        listUserDocuments(APPWRITE_ASSIGNMENTS_COLLECTION_ID, userId),
+        listUserDocuments(APPWRITE_SKILLS_COLLECTION_ID, userId),
+        listUserDocuments(APPWRITE_GOALS_COLLECTION_ID, userId),
+        listUserDocuments(APPWRITE_FOCUS_COLLECTION_ID, userId),
+        listUserDocuments(APPWRITE_NOTES_COLLECTION_ID, userId),
+      ]);
 
       setTasks(taskDocuments.map(mapTaskDocument));
       setAssignments(assignmentDocuments.map(mapAssignmentDocument));
@@ -581,7 +920,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         syncedSkills.length > 0
           ? syncedSkills.map((skill) => {
               const localMatch = currentSkills.find(
-                (item) => String(item.id) === String(skill.id)
+                (item) => String(item.id) === String(skill.id),
               );
 
               const mergedProgress =
@@ -596,7 +935,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
                 progress: mergedProgress,
               };
             })
-          : currentSkills
+          : currentSkills,
       );
       setGoals(goalDocuments.map(mapGoalDocument));
       setFocusHistory(focusDocuments.map(mapFocusDocument));
@@ -674,9 +1013,11 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
 
     for (const migration of migrationMap) {
       try {
-        const existing = await databases.listDocuments(APPWRITE_DATABASE_ID, migration.collectionId, [
-          Query.equal("userId", userId),
-        ]);
+        const existing = await databases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          migration.collectionId,
+          [Query.equal("userId", userId)],
+        );
 
         if (existing.documents.length > 0) {
           continue;
@@ -693,7 +1034,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
             APPWRITE_DATABASE_ID,
             migration.collectionId,
             ID.unique(),
-            migration.mapper(item)
+            migration.mapper(item),
           );
         }
 
@@ -717,7 +1058,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           date: entry.date,
           duration: Number(entry.duration) || 0,
           task: entry.task || "General Study",
-        }
+        },
       );
 
       setFocusHistory((items) => [mapFocusDocument(created), ...items]);
@@ -735,7 +1076,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       false,
       "/",
       "POST",
-      { "content-type": "application/json" }
+      { "content-type": "application/json" },
     );
 
     let body = {};
@@ -746,7 +1087,9 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     }
 
     if (execution.responseStatusCode >= 400 || body.ok === false) {
-      throw new Error(body.error || "The focus service could not complete the request.");
+      throw new Error(
+        body.error || "The focus service could not complete the request.",
+      );
     }
 
     return body;
@@ -794,24 +1137,26 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           ID.unique(),
           authForm.email,
           authForm.password,
-          authForm.name
+          authForm.name,
         );
 
         // Appwrite requires an authenticated session to send verification email.
         try {
           await account.createEmailPasswordSession(
             authForm.email,
-            authForm.password
+            authForm.password,
           );
           await account.createVerification(
-            `${window.location.origin}${window.location.pathname}`
+            `${window.location.origin}${window.location.pathname}`,
           );
           await account.updatePrefs({
             emailVerificationPending: true,
           });
         } catch (verificationError) {
           console.error("Email verification setup failed:", verificationError);
-          setAuthError("Account created, but the verification email could not be sent. Please try again.");
+          setAuthError(
+            "Account created, but the verification email could not be sent. Please try again.",
+          );
           return;
         } finally {
           try {
@@ -822,7 +1167,9 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         }
 
         setEmailVerificationSent(true);
-        setAuthSuccess("Verification email sent to your email. Please check your spam folder too, then verify your address before logging in.");
+        setAuthSuccess(
+          "Verification email sent to your email. Please check your spam folder too, then verify your address before logging in.",
+        );
         setAuthForm({ name: "", email: "", password: "", confirmPassword: "" });
         setPasswordStrength(0);
         return;
@@ -831,18 +1178,24 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       // Login flow (works for both signup and login attempts)
       await account.createEmailPasswordSession(
         authForm.email,
-        authForm.password
+        authForm.password,
       );
 
       const currentUser = await account.get();
 
-      if (!currentUser.emailVerification && currentUser.prefs?.emailVerificationPending) {
+      if (
+        !currentUser.emailVerification &&
+        currentUser.prefs?.emailVerificationPending
+      ) {
         await account.deleteSession("current");
         setAuthError("Please verify your email address before logging in.");
         return;
       }
 
-      if (currentUser.emailVerification && currentUser.prefs?.emailVerificationPending) {
+      if (
+        currentUser.emailVerification &&
+        currentUser.prefs?.emailVerificationPending
+      ) {
         await account.updatePrefs({
           emailVerificationPending: false,
         });
@@ -853,20 +1206,29 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
       setIsAuthenticated(true);
       setUserName(currentUser.name || authForm.name || "Mahei-Pathap User");
-      localStorage.setItem(USER_NAME_STORAGE_KEY, currentUser.name || authForm.name || "Mahei-Pathap User");
+      localStorage.setItem(
+        USER_NAME_STORAGE_KEY,
+        currentUser.name || authForm.name || "Mahei-Pathap User",
+      );
       setIsAdmin(await isAdminUser());
       await migrateLegacyData(currentUser.$id);
       await syncUserDataFromAppwrite(currentUser.$id);
     } catch (error) {
       // More specific error messages
       if (error.message?.includes("user already exists")) {
-        setAuthError("This email is already registered. Please login or use a different email.");
+        setAuthError(
+          "This email is already registered. Please login or use a different email.",
+        );
       } else if (error.message?.includes("Invalid credentials")) {
         setAuthError("Invalid email or password. Please try again.");
       } else if (error.message?.includes("user_email_already_exists")) {
-        setAuthError("This email is already in use. Please login or use a different email.");
+        setAuthError(
+          "This email is already in use. Please login or use a different email.",
+        );
       } else {
-        setAuthError(error.message || "Authentication failed. Please try again.");
+        setAuthError(
+          error.message || "Authentication failed. Please try again.",
+        );
       }
     }
   }
@@ -918,11 +1280,21 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         .updateVerification(verificationUserId, verificationSecret)
         .then(() => {
           setAuthSuccess("Your email is verified. You can now log in.");
-          window.history.replaceState({}, document.title, window.location.pathname);
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname,
+          );
         })
         .catch(() => {
-          setAuthError("This verification link is invalid or has expired. Please request a new one.");
-          window.history.replaceState({}, document.title, window.location.pathname);
+          setAuthError(
+            "This verification link is invalid or has expired. Please request a new one.",
+          );
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname,
+          );
         });
     }
 
@@ -931,7 +1303,8 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       return;
     }
 
-    account.get()
+    account
+      .get()
       .then(async (currentUser) => {
         setAuthUser(currentUser);
         setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
@@ -972,81 +1345,85 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   const [trustedFocusSessionId, setTrustedFocusSessionId] = useState(null);
   const [focusActionBusy, setFocusActionBusy] = useState(false);
   const [focusStatus, setFocusStatus] = useState("");
-  
+
   useEffect(() => {
-  if (!timerRunning) return;
+    if (!timerRunning) return;
 
-  const interval = setInterval(() => {
-    setTimerSeconds((seconds) => Math.max(0, seconds - 1));
-  }, 1000);
+    const interval = setInterval(() => {
+      setTimerSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
 
-  return () => clearInterval(interval);
-}, [timerRunning]);
+    return () => clearInterval(interval);
+  }, [timerRunning]);
 
- useEffect(() => {
-  if (!timerRunning || timerSeconds !== 0) return;
+  useEffect(() => {
+    if (!timerRunning || timerSeconds !== 0) return;
 
-  setTimerRunning(false);
-  if (timerMode !== "work") return;
+    setTimerRunning(false);
+    if (timerMode !== "work") return;
 
-  (async () => {
-    setFocusActionBusy(true);
-    setFocusStatus("Verifying your focus session…");
+    (async () => {
+      setFocusActionBusy(true);
+      setFocusStatus("Verifying your focus session…");
 
-    try {
-      if (APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID && authUser) {
-        const result = await executeTrustedFocus("complete_focus", {
-          sessionId: trustedFocusSessionId,
-        });
+      try {
+        if (APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID && authUser) {
+          const result = await executeTrustedFocus("complete_focus", {
+            sessionId: trustedFocusSessionId,
+          });
 
+          setTrustedFocusSessionId(null);
+          setFocusStatus(
+            `Focus completed — +${result.xpAwarded || 10} XP earned.`,
+          );
+
+          await saveFocusSession({
+            date: getLocalDateString(),
+            duration: 25,
+            task: focusTask.trim() || "General Study",
+          });
+        } else if (authUser) {
+          await saveFocusSession({
+            date: getLocalDateString(),
+            duration: 25,
+            task: focusTask.trim() || "General Study",
+          });
+
+          setFocusStatus("Focus completed and saved.");
+        }
+      } catch (error) {
+        console.error("Failed to verify focus session:", error);
         setTrustedFocusSessionId(null);
-        setFocusStatus(
-          `Focus completed — +${result.xpAwarded || 10} XP earned.`
-        );
-
-        await saveFocusSession({
-          date: getLocalDateString(),
-          duration: 25,
-          task: focusTask.trim() || "General Study",
-        });
-      } else if (authUser) {
-        await saveFocusSession({
-          date: getLocalDateString(),
-          duration: 25,
-          task: focusTask.trim() || "General Study",
-        });
-
-        setFocusStatus("Focus completed and saved.");
+        setFocusStatus(error.message || "Focus verification failed.");
+      } finally {
+        setFocusActionBusy(false);
       }
-    } catch (error) {
-      console.error("Failed to verify focus session:", error);
-      setTrustedFocusSessionId(null);
-      setFocusStatus(
-        error.message || "Focus verification failed."
-      );
-    } finally {
-      setFocusActionBusy(false);
-    }
-  })();
-}, [
-  timerSeconds,
-  timerRunning,
-  timerMode,
-  focusTask,
-  trustedFocusSessionId,
-  authUser,
-]);
+    })();
+  }, [
+    timerSeconds,
+    timerRunning,
+    timerMode,
+    focusTask,
+    trustedFocusSessionId,
+    authUser,
+  ]);
 
   async function handleFocusStartPause() {
     if (focusActionBusy) return;
     if (timerRunning) {
       setTimerRunning(false);
-      setFocusStatus("Focus paused. The secure session clock continues until completion.");
+      setFocusStatus(
+        "Focus paused. The secure session clock continues until completion.",
+      );
       return;
     }
 
     setFocusStatus("");
-    if (timerMode === "work" && APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID && authUser) {
+    if (
+      timerMode === "work" &&
+      APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID &&
+      authUser
+    ) {
       setFocusActionBusy(true);
       try {
         const result = await executeTrustedFocus("start_focus", {
@@ -1091,70 +1468,61 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   ========================================================= */
 
   const completedTasks = tasks.filter(
-    (task) => task.status === "Completed"
+    (task) => task.status === "Completed",
   ).length;
 
   const todayTasks = tasks.filter((task) => task.deadline === today);
 
   const focusMinutes = focusHistory.reduce(
     (total, item) => total + Number(item.duration || 0),
-    0
+    0,
   );
 
   const watchedVideos = skills.reduce(
     (total, skill) =>
       total + skill.videos.filter((video) => video.watched).length,
-    0
+    0,
   );
 
   const totalVideos = skills.reduce(
     (total, skill) => total + skill.videos.length,
-    0
+    0,
   );
 
   const learningProgress =
-    totalVideos === 0
-      ? 0
-      : Math.round((watchedVideos / totalVideos) * 100);
+    totalVideos === 0 ? 0 : Math.round((watchedVideos / totalVideos) * 100);
 
   const productivity =
     tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
   async function checkDiscordLinkStatus() {
-  if (!authUser || !DISCORD_LINK_FUNCTION_ENABLED) {
-    return false;
-  }
-
-  try {
-    setDiscordLinkChecking(true);
-
-    const result = await executeTrustedFocus(
-      "check_discord_link"
-    );
-
-    if (result?.linked) {
-      setDiscordLinked(true);
-      setDiscordUsername(
-        result.discordUsername || ""
-      );
-
-      return true;
+    if (!authUser || !DISCORD_LINK_FUNCTION_ENABLED) {
+      return false;
     }
 
-    setDiscordLinked(false);
-    setDiscordUsername("");
+    try {
+      setDiscordLinkChecking(true);
 
-    return false;
-  } catch (error) {
-    console.error(
-      "Failed to check Discord link status:",
-      error
-    );
+      const result = await executeTrustedFocus("check_discord_link");
 
-    return false;
-  } finally {
-    setDiscordLinkChecking(false);
+      if (result?.linked) {
+        setDiscordLinked(true);
+        setDiscordUsername(result.discordUsername || "");
+
+        return true;
+      }
+
+      setDiscordLinked(false);
+      setDiscordUsername("");
+
+      return false;
+    } catch (error) {
+      console.error("Failed to check Discord link status:", error);
+
+      return false;
+    } finally {
+      setDiscordLinkChecking(false);
+    }
   }
-}
 
   async function createDiscordLinkCode() {
     setDiscordLinkError("");
@@ -1171,50 +1539,48 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       setDiscordLinkCode(result.code || "");
       setDiscordLinkExpiresAt(result.expiresAt || "");
     } catch (error) {
-      setDiscordLinkError(error.message || "Unable to create a Discord link code.");
+      setDiscordLinkError(
+        error.message || "Unable to create a Discord link code.",
+      );
     } finally {
       setDiscordLinkLoading(false);
     }
   }
   useEffect(() => {
-  if (
-    !authUser ||
-    !DISCORD_LINK_FUNCTION_ENABLED ||
-    activePage !== "discord"
-  ) {
-    return undefined;
-  }
-
-  let cancelled = false;
-  let intervalId = null;
-
-  const check = async () => {
-    if (cancelled || discordLinked) return;
-
-    const linked = await checkDiscordLinkStatus();
-
-    if (linked && intervalId) {
-      window.clearInterval(intervalId);
-      intervalId = null;
+    if (
+      !authUser ||
+      !DISCORD_LINK_FUNCTION_ENABLED ||
+      activePage !== "discord"
+    ) {
+      return undefined;
     }
-  };
 
-  check();
+    let cancelled = false;
+    let intervalId = null;
 
-  intervalId = window.setInterval(check, 3000);
+    const check = async () => {
+      if (cancelled || discordLinked) return;
 
-  return () => {
-    cancelled = true;
+      const linked = await checkDiscordLinkStatus();
 
-    if (intervalId) {
-      window.clearInterval(intervalId);
-    }
-  };
-}, [
-  authUser?.$id,
-  activePage,
-  discordLinked,
-]);
+      if (linked && intervalId) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    check();
+
+    intervalId = window.setInterval(check, 3000);
+
+    return () => {
+      cancelled = true;
+
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [authUser?.$id, activePage, discordLinked]);
 
   async function copyDiscordLinkCode() {
     if (!discordLinkCode) return;
@@ -1236,6 +1602,12 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       id: "dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
+      color: "orange",
+    },
+    {
+      id: "ai-coach",
+      label: "AI Coach",
+      icon: Sparkles,
       color: "orange",
     },
     {
@@ -1292,18 +1664,18 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       icon: Sun,
       color: "gold",
     },
-    {
-      id: "about",
-      label: "About Me",
-      icon: User,
-      color: "purple",
-    },
-    {
-      id: "donation",
-      label: "Donation",
-      icon: Heart,
-      color: "coral",
-    },
+    // {
+    //   id: "about",
+    //   label: "About Me",
+    //   icon: User,
+    //   color: "purple",
+    // },
+    // {
+    //   id: "donation",
+    //   label: "Donation",
+    //   icon: Heart,
+    //   color: "coral",
+    // },
     {
       id: "suggestions",
       label: "Suggestions",
@@ -1322,12 +1694,16 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       icon: MessageCircle,
       color: "purple",
     },
-    ...(isAdmin ? [{
-      id: "admin",
-      label: "Admin Panel",
-      icon: ShieldCheck,
-      color: "coral",
-    }] : []),
+    ...(isAdmin
+      ? [
+          {
+            id: "admin",
+            label: "Admin Panel",
+            icon: ShieldCheck,
+            color: "coral",
+          },
+        ]
+      : []),
   ];
 
   function navigate(page) {
@@ -1385,7 +1761,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             userId: authUser.$id,
             ...newTask,
-          }
+          },
         );
 
         setTasks((items) => [mapTaskDocument(created), ...items]);
@@ -1396,10 +1772,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       }
     }
 
-    setTasks((items) => [
-      { id: createId(), ...newTask },
-      ...items,
-    ]);
+    setTasks((items) => [{ id: createId(), ...newTask }, ...items]);
     closePanel();
   }
 
@@ -1415,11 +1788,13 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           APPWRITE_DATABASE_ID,
           APPWRITE_TASKS_COLLECTION_ID,
           id,
-          { status: nextStatus }
+          { status: nextStatus },
         );
 
         setTasks((items) =>
-          items.map((task) => (task.id === id ? mapTaskDocument(updated) : task))
+          items.map((task) =>
+            task.id === id ? mapTaskDocument(updated) : task,
+          ),
         );
         return;
       } catch (error) {
@@ -1434,8 +1809,8 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
               ...task,
               status: nextStatus,
             }
-          : task
-      )
+          : task,
+      ),
     );
   }
 
@@ -1445,7 +1820,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         await databases.deleteDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_TASKS_COLLECTION_ID,
-          id
+          id,
         );
       } catch (error) {
         console.error("Failed to delete task from Appwrite:", error);
@@ -1486,7 +1861,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             userId: authUser.$id,
             ...newAssignment,
-          }
+          },
         );
 
         setAssignments((items) => [...items, mapAssignmentDocument(created)]);
@@ -1517,13 +1892,13 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             progress,
             status: nextStatus,
-          }
+          },
         );
 
         setAssignments((items) =>
           items.map((assignment) =>
-            assignment.id === id ? mapAssignmentDocument(updated) : assignment
-          )
+            assignment.id === id ? mapAssignmentDocument(updated) : assignment,
+          ),
         );
         return;
       } catch (error) {
@@ -1540,7 +1915,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           progress,
           status: nextStatus,
         };
-      })
+      }),
     );
   }
 
@@ -1550,14 +1925,16 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         await databases.deleteDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_ASSIGNMENTS_COLLECTION_ID,
-          id
+          id,
         );
       } catch (error) {
         console.error("Failed to delete assignment from Appwrite:", error);
       }
     }
 
-    setAssignments((items) => items.filter((assignment) => assignment.id !== id));
+    setAssignments((items) =>
+      items.filter((assignment) => assignment.id !== id),
+    );
   }
 
   /* =========================================================
@@ -1593,7 +1970,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
             {
               userId: authUser.$id,
               ...nextSkill,
-            }
+            },
           );
         } catch (error) {
           if (!isProgressSchemaMissing(error)) {
@@ -1610,11 +1987,11 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
               category: nextSkill.category,
               notes: nextSkill.notes,
               videos: [],
-            }
+            },
           );
 
           setSkillStatus(
-            "Skill saved. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+            "Skill saved. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud.",
           );
         }
 
@@ -1658,7 +2035,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     };
 
     setSkills((items) =>
-      items.map((item) => (item.id === skillId ? updatedSkill : item))
+      items.map((item) => (item.id === skillId ? updatedSkill : item)),
     );
     setSkillStatus(`Progress updated for ${skill.name}.`);
 
@@ -1668,21 +2045,24 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           APPWRITE_DATABASE_ID,
           APPWRITE_SKILLS_COLLECTION_ID,
           skillId,
-          { progress: nextProgress }
+          { progress: nextProgress },
         );
 
         setSkills((items) =>
           items.map((item) =>
-            item.id === skillId ? mapSkillDocument(updated) : item
-          )
+            item.id === skillId ? mapSkillDocument(updated) : item,
+          ),
         );
       } catch (error) {
         if (isProgressSchemaMissing(error)) {
           setSkillStatus(
-            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud.",
           );
         } else {
-          console.error("Failed to increase skill progress in Appwrite:", error);
+          console.error(
+            "Failed to increase skill progress in Appwrite:",
+            error,
+          );
         }
       }
     }
@@ -1705,7 +2085,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     };
 
     setSkills((items) =>
-      items.map((item) => (item.id === skillId ? updatedSkill : item))
+      items.map((item) => (item.id === skillId ? updatedSkill : item)),
     );
     setSkillStatus(`Progress updated for ${skill.name}.`);
 
@@ -1715,18 +2095,18 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           APPWRITE_DATABASE_ID,
           APPWRITE_SKILLS_COLLECTION_ID,
           skillId,
-          { progress: nextProgress }
+          { progress: nextProgress },
         );
 
         setSkills((items) =>
           items.map((item) =>
-            item.id === skillId ? mapSkillDocument(updated) : item
-          )
+            item.id === skillId ? mapSkillDocument(updated) : item,
+          ),
         );
       } catch (error) {
         if (isProgressSchemaMissing(error)) {
           setSkillStatus(
-            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud."
+            "Progress updated locally. Add a numeric progress attribute in Appwrite Skills collection to sync progress to cloud.",
           );
         } else {
           console.error("Failed to undo skill progress in Appwrite:", error);
@@ -1774,7 +2154,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     };
 
     setSkills((items) =>
-      items.map((item) => (item.id === skillId ? updatedSkill : item))
+      items.map((item) => (item.id === skillId ? updatedSkill : item)),
     );
 
     closePanel();
@@ -1787,13 +2167,13 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           skillId,
           {
             videos: encodeVideosForAppwrite(updatedSkill.videos),
-          }
+          },
         );
 
         setSkills((items) =>
           items.map((item) =>
-            item.id === skillId ? mapSkillDocument(updated) : item
-          )
+            item.id === skillId ? mapSkillDocument(updated) : item,
+          ),
         );
       } catch (error) {
         console.error("Failed to update skill video list in Appwrite:", error);
@@ -1808,23 +2188,25 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     const updatedSkill = {
       ...skill,
       videos: skill.videos.map((video) =>
-        video.id === videoId ? { ...video, notes: value } : video
+        video.id === videoId ? { ...video, notes: value } : video,
       ),
     };
 
     setSkills((items) =>
-      items.map((item) => (item.id === skillId ? updatedSkill : item))
+      items.map((item) => (item.id === skillId ? updatedSkill : item)),
     );
 
     if (isAppwriteConfigured && authUser && typeof skillId === "string") {
-      databases.updateDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_SKILLS_COLLECTION_ID,
-        skillId,
-        { videos: encodeVideosForAppwrite(updatedSkill.videos) }
-      ).catch((error) => {
-        console.error("Failed to save video notes to Appwrite:", error);
-      });
+      databases
+        .updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SKILLS_COLLECTION_ID,
+          skillId,
+          { videos: encodeVideosForAppwrite(updatedSkill.videos) },
+        )
+        .catch((error) => {
+          console.error("Failed to save video notes to Appwrite:", error);
+        });
     }
   }
 
@@ -1836,13 +2218,13 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
     const updatedSkill = {
       ...skill,
       videos: skill.videos.map((video) =>
-        video.id === videoId ? { ...video, watched: !video.watched } : video
+        video.id === videoId ? { ...video, watched: !video.watched } : video,
       ),
     };
 
     // Update the UI immediately, then persist the exact same video list.
     setSkills((items) =>
-      items.map((item) => (item.id === skillId ? updatedSkill : item))
+      items.map((item) => (item.id === skillId ? updatedSkill : item)),
     );
 
     if (isAppwriteConfigured && authUser && typeof skillId === "string") {
@@ -1851,24 +2233,25 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           APPWRITE_DATABASE_ID,
           APPWRITE_SKILLS_COLLECTION_ID,
           skillId,
-          { videos: encodeVideosForAppwrite(updatedSkill.videos) }
+          { videos: encodeVideosForAppwrite(updatedSkill.videos) },
         );
 
         // Use Appwrite's saved document as the final state. This keeps the
         // watched count consistent after refresh and prevents stale local data.
         setSkills((items) =>
           items.map((item) =>
-            item.id === skillId ? mapSkillDocument(saved) : item
-          )
+            item.id === skillId ? mapSkillDocument(saved) : item,
+          ),
         );
       } catch (error) {
-        console.error("Failed to update video watched status in Appwrite:", error);
+        console.error(
+          "Failed to update video watched status in Appwrite:",
+          error,
+        );
 
         // Do not show a watched state that was not actually saved.
         setSkills((items) =>
-          items.map((item) =>
-            item.id === skillId ? previousSkill : item
-          )
+          items.map((item) => (item.id === skillId ? previousSkill : item)),
         );
         setSkillStatus("Could not save the video status. Please try again.");
       }
@@ -1881,7 +2264,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         await databases.deleteDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_SKILLS_COLLECTION_ID,
-          skillId
+          skillId,
         );
       } catch (error) {
         console.error("Failed to delete skill from Appwrite:", error);
@@ -1921,7 +2304,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             userId: authUser.$id,
             ...newGoal,
-          }
+          },
         );
 
         setGoals((items) => [mapGoalDocument(created), ...items]);
@@ -1954,11 +2337,13 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           APPWRITE_DATABASE_ID,
           APPWRITE_GOALS_COLLECTION_ID,
           id,
-          { progress }
+          { progress },
         );
 
         setGoals((items) =>
-          items.map((goal) => (goal.id === id ? mapGoalDocument(updated) : goal))
+          items.map((goal) =>
+            goal.id === id ? mapGoalDocument(updated) : goal,
+          ),
         );
         return;
       } catch (error) {
@@ -1973,8 +2358,8 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
               ...goal,
               progress,
             }
-          : goal
-      )
+          : goal,
+      ),
     );
   }
 
@@ -1984,7 +2369,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         await databases.deleteDocument(
           APPWRITE_DATABASE_ID,
           APPWRITE_GOALS_COLLECTION_ID,
-          id
+          id,
         );
       } catch (error) {
         console.error("Failed to delete goal from Appwrite:", error);
@@ -2023,7 +2408,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             userId: authUser.$id,
             ...notePayload,
-          }
+          },
         );
 
         setNotes((items) => [mapNoteDocument(created), ...items]);
@@ -2053,7 +2438,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
       await databases.deleteDocument(
         APPWRITE_DATABASE_ID,
         APPWRITE_NOTES_COLLECTION_ID,
-        noteId
+        noteId,
       );
     } catch (error) {
       console.error("Failed to delete Appwrite note:", error);
@@ -2063,11 +2448,11 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   async function completeTodayReview() {
     const title = `Daily Review - ${today}`;
     const existingReview = notes.find(
-      (note) => note.title === title && note.category === "Reflection"
+      (note) => note.title === title && note.category === "Reflection",
     );
 
     const unfinishedCount = tasks.filter(
-      (task) => task.status !== "Completed"
+      (task) => task.status !== "Completed",
     ).length;
 
     const content = [
@@ -2098,7 +2483,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           {
             userId: authUser.$id,
             ...notePayload,
-          }
+          },
         );
 
         setNotes((items) => [mapNoteDocument(created), ...items]);
@@ -2164,8 +2549,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
         </div>
 
         <span className="mobile-streak">
-          <Flame size={16} />
-          5
+          <Flame size={16} />5
         </span>
       </header>
 
@@ -2216,17 +2600,12 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
             <strong>{userName}</strong>
 
             <span>
-              <Flame size={13} />
-              5 day streak
+              <Flame size={13} />5 day streak
             </span>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="mobile-logout"
-          onClick={logout}
-        >
+        <button type="button" className="mobile-logout" onClick={logout}>
           <LogOut size={17} />
           Logout
         </button>
@@ -2256,10 +2635,7 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
               {completedTasks} tasks done
             </div>
 
-            <button
-              className="dark-button"
-              onClick={() => navigate("focus")}
-            >
+            <button className="dark-button" onClick={() => navigate("focus")}>
               <Timer size={16} />
               Focus
             </button>
@@ -2307,6 +2683,655 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
             />
           )}
 
+          {/* AI COACH */}
+          {activePage === "ai-coach" && (
+            <section className="page-section">
+              <div
+                style={{
+                  maxWidth: "920px",
+                  margin: "0 auto",
+                }}
+              >
+                {/* Header */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "20px",
+                    marginBottom: "28px",
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        color: "#c96b32",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      <Sparkles size={15} />
+                      AI STUDY COACH
+                    </div>
+
+                    <h3
+                      style={{
+                        margin: 0,
+                        fontSize: "30px",
+                        lineHeight: 1.2,
+                        color: "#302820",
+                      }}
+                    >
+                      Study smarter with Mahei.
+                    </h3>
+
+                    <p
+                      style={{
+                        margin: "10px 0 0",
+                        color: "#766b61",
+                        fontSize: "15px",
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      Your personal study companion for planning, focus and
+                      learning.
+                    </p>
+                  </div>
+
+                  {(aiReply || aiSubmittedMessage) && (
+                    <button
+                      type="button"
+                      onClick={clearAiCoach}
+                      style={{
+                        border: "1px solid #ded5cc",
+                        background: "#fffaf5",
+                        color: "#554940",
+                        borderRadius: "10px",
+                        padding: "9px 14px",
+                        fontSize: "13px",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      New chat
+                    </button>
+                  )}
+                </div>
+
+                {/* Conversation */}
+                {aiSubmittedMessage && !aiLoading && (
+                  <div style={{ marginBottom: "28px" }}>
+                    {/* User message */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: "75%",
+                          background: "#302820",
+                          color: "#fff",
+                          borderRadius: "18px 18px 5px 18px",
+                          padding: "13px 16px",
+                          fontSize: "14px",
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {aiSubmittedMessage}
+                      </div>
+                    </div>
+
+                    {/* AI response */}
+                    {aiReply && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "36px",
+                            height: "36px",
+                            minWidth: "36px",
+                            borderRadius: "12px",
+                            background: "#f7e6d8",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#c96b32",
+                          }}
+                        >
+                          <Sparkles size={18} />
+                        </div>
+
+                        <div
+                          style={{
+                            flex: 1,
+                            background: "#fff",
+                            border: "1px solid #eadfd5",
+                            borderRadius: "5px 18px 18px 18px",
+                            padding: "18px 20px",
+                            boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              color: "#c96b32",
+                              marginBottom: "9px",
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                            }}
+                          >
+                            Mahei AI Coach
+                          </div>
+
+                          <div
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              fontSize: "15px",
+                              lineHeight: 1.75,
+                              color: "#40362f",
+                            }}
+                          >
+                            {aiReply}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* AI STUDY PLANNER */}
+                <div
+                  style={{
+                    marginBottom: "24px",
+                    padding: "20px",
+                    background: "#fff",
+                    border: "1px solid #eadfd5",
+                    borderRadius: "18px",
+                    boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "16px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          color: "#c96b32",
+                          marginBottom: "6px",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        AI Study Planner
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          color: "#6d6056",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        Let Mahei create a personalized study plan from your
+                        current tasks, assignments, goals and skills.
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="dark-button"
+                      onClick={handleGenerateStudyPlan}
+                      disabled={studyPlanLoading}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "11px 16px",
+                        borderRadius: "11px",
+                        cursor: studyPlanLoading ? "not-allowed" : "pointer",
+                        opacity: studyPlanLoading ? 0.6 : 1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <Sparkles size={16} />
+                      {studyPlanLoading
+                        ? "Creating plan..."
+                        : "Create Study Plan"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Input Card */}
+                <div
+                  style={{
+                    background: "#fff",
+                    border: "1px solid #eadfd5",
+                    borderRadius: "20px",
+                    padding: "22px",
+                    boxShadow: "0 8px 30px rgba(68, 48, 32, 0.06)",
+                  }}
+                >
+                  <label
+                    htmlFor="ai-coach-message"
+                    style={{
+                      display: "block",
+                      fontSize: "14px",
+                      fontWeight: 700,
+                      color: "#44382f",
+                      marginBottom: "10px",
+                    }}
+                  >
+                    What would you like help with?
+                  </label>
+
+                  <textarea
+                    id="ai-coach-message"
+                    value={aiMessage}
+                    onChange={(event) => setAiMessage(event.target.value)}
+                    onKeyDown={handleAiKeyDown}
+                    placeholder="Example: I have an exam next week and I keep procrastinating. Help me make a plan."
+                    rows={5}
+                    disabled={aiLoading}
+                    style={{
+                      width: "100%",
+                      minHeight: "130px",
+                      boxSizing: "border-box",
+                      resize: "vertical",
+                      border: "1px solid #ded4ca",
+                      borderRadius: "14px",
+                      padding: "16px",
+                      fontSize: "15px",
+                      lineHeight: 1.6,
+                      color: "#302820",
+                      background: "#fffdfb",
+                      outline: "none",
+                      fontFamily: "inherit",
+                    }}
+                  />
+
+                  {/* Bottom input controls */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "16px",
+                      marginTop: "14px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#9a8d82",
+                      }}
+                    >
+                      Press Ctrl + Enter to ask
+                    </span>
+
+                    <button
+                      type="button"
+                      className="dark-button"
+                      onClick={handleAiCoach}
+                      disabled={aiLoading || !aiMessage.trim()}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                        minWidth: "135px",
+                        padding: "11px 18px",
+                        borderRadius: "11px",
+                        cursor:
+                          aiLoading || !aiMessage.trim()
+                            ? "not-allowed"
+                            : "pointer",
+                        opacity: aiLoading || !aiMessage.trim() ? 0.6 : 1,
+                      }}
+                    >
+                      <Sparkles size={16} />
+                      {aiLoading ? "Thinking..." : "Ask Coach"}
+                    </button>
+                  </div>
+
+                  {/* Quick prompts */}
+                  <div style={{ marginTop: "22px" }}>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#8b7d72",
+                        marginBottom: "10px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      Try asking
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "9px",
+                      }}
+                    >
+                      {[
+                        "What should I study today?",
+                        "Help me stop procrastinating",
+                        "Make a study plan",
+                        "Break my assignment into steps",
+                      ].map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => {
+                            if (prompt === "Make a study plan") {
+                              setPlanInterviewActive(true);
+                              setPlanInterviewStep(0);
+                              setPlanInterviewAnswer("");
+                              setPlanInterviewAnswers([]);
+                              return;
+                            }
+
+                            handleQuickPrompt(prompt);
+                          }}
+                          disabled={aiLoading}
+                          style={{
+                            border: "1px solid #e4d9cf",
+                            background: "#fffaf5",
+                            color: "#594c42",
+                            borderRadius: "999px",
+                            padding: "8px 13px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: aiLoading ? "not-allowed" : "pointer",
+                            opacity: aiLoading ? 0.6 : 1,
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {planInterviewActive && (
+                  <div
+                    style={{
+                      marginTop: "16px",
+                      padding: "18px",
+                      background: "#ffffff",
+                      border: "1px solid #e4d9cf",
+                      borderRadius: "16px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#9b6a4c",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      QUESTION {planInterviewStep + 1} OF{" "}
+                      {planInterviewQuestions.length}
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "18px",
+                        fontWeight: 700,
+                        color: "#40362f",
+                        marginBottom: "14px",
+                      }}
+                    >
+                      {planInterviewQuestions[planInterviewStep]}
+                    </div>
+
+                    <textarea
+                      value={planInterviewAnswer}
+                      onChange={(e) => setPlanInterviewAnswer(e.target.value)}
+                      placeholder="Type your answer..."
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #e4d9cf",
+                        borderRadius: "12px",
+                        resize: "vertical",
+                        fontSize: "14px",
+                        boxSizing: "border-box",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handlePlanInterviewSubmit}
+                      style={{
+                        marginTop: "12px",
+                        border: "none",
+                        background: "#9b6a4c",
+                        color: "#ffffff",
+                        borderRadius: "10px",
+                        padding: "10px 16px",
+                        fontSize: "13px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {planInterviewStep === planInterviewQuestions.length - 1
+                        ? "Create my study plan"
+                        : "Next"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Study Plan Result */}
+                {studyPlan && (
+                  <div
+                    style={{
+                      marginBottom: "24px",
+                      padding: "22px",
+                      background: "#fff",
+                      border: "1px solid #eadfd5",
+                      borderRadius: "18px",
+                      boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        color: "#c96b32",
+                        marginBottom: "10px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      Today's AI Study Plan
+                    </div>
+                    {aiReply && (
+                      <div
+                        style={{
+                          marginBottom: "16px",
+                          padding: "12px 14px",
+                          background: "#fff7ed",
+                          borderRadius: "12px",
+                          fontSize: "14px",
+                          lineHeight: 1.5,
+                          color: "#40362f",
+                        }}
+                      >
+                        {aiReply}
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        fontSize: "15px",
+                        lineHeight: 1.75,
+                        color: "#40362f",
+                      }}
+                    >
+                      {studyPlan}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        marginTop: "20px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={handleAddStudyPlanToTask}
+                        style={{
+                          border: "none",
+                          background: "#9b6a4c",
+                          color: "#ffffff",
+                          borderRadius: "10px",
+                          padding: "11px 16px",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Add today's plan to Tasks
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {}}
+                        style={{
+                          border: "1px solid #9b6a4c",
+                          background: "#ffffff",
+                          color: "#9b6a4c",
+                          borderRadius: "10px",
+                          padding: "11px 16px",
+                          fontSize: "13px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Create 7-day Goal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error */}
+                {aiError && (
+                  <div
+                    role="alert"
+                    style={{
+                      marginTop: "16px",
+                      padding: "13px 15px",
+                      borderRadius: "12px",
+                      border: "1px solid #efd0c7",
+                      background: "#fff5f2",
+                      color: "#a34b3c",
+                      fontSize: "14px",
+                    }}
+                  >
+                    {aiError}
+                  </div>
+                )}
+
+                {/* Loading */}
+                {aiLoading && (
+                  <div
+                    style={{
+                      marginTop: "24px",
+                      padding: "22px",
+                      background: "#fff",
+                      border: "1px solid #eadfd5",
+                      borderRadius: "18px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      color: "#6d6056",
+                    }}
+                  >
+                    <Sparkles size={18} />
+                    <span>Mahei is thinking about your question...</span>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!aiSubmittedMessage && !aiLoading && (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "42px 20px",
+                      color: "#8c7f74",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "52px",
+                        height: "52px",
+                        margin: "0 auto 14px",
+                        borderRadius: "16px",
+                        background: "#f8e9dc",
+                        color: "#c96b32",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Sparkles size={23} />
+                    </div>
+
+                    <h4
+                      style={{
+                        margin: "0 0 7px",
+                        color: "#51453c",
+                        fontSize: "16px",
+                      }}
+                    >
+                      Your study coach is ready.
+                    </h4>
+
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "13px",
+                      }}
+                    >
+                      Ask a question or choose one of the suggestions above.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* ABOUT ME */}
           {activePage === "about" && (
             <AboutPage
@@ -2317,30 +3342,21 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
           )}
 
           {/* DONATION */}
-          {activePage === "donation" && (
-            <DonationPage />
-          )}
+          {activePage === "donation" && <DonationPage />}
 
           {/* SUGGESTIONS */}
           {activePage === "suggestions" && (
-            <SuggestionsPage
-              authUser={authUser}
-              userName={userName}
-            />
+            <SuggestionsPage authUser={authUser} userName={userName} />
           )}
 
           {/* ANNOUNCEMENTS */}
           {activePage === "announcements" && (
-            <AnnouncementsPage
-              authUser={authUser}
-            />
+            <AnnouncementsPage authUser={authUser} />
           )}
 
           {/* ADMIN */}
           {activePage === "admin" && isAdmin && (
-            <AdminDashboard
-              authUser={authUser}
-            />
+            <AdminDashboard authUser={authUser} />
           )}
 
           {/* TASKS */}
@@ -2380,9 +3396,9 @@ const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
                       ? submitSkill
                       : panelType === "video"
                         ? submitVideo
-                      : panelType === "goal"
-                        ? submitGoal
-                        : submitNote
+                        : panelType === "goal"
+                          ? submitGoal
+                          : submitNote
               }
             />
           )}
@@ -2516,92 +3532,135 @@ function DiscordPage({
   return (
     <section className="page-section discord-page">
       <div className="page-heading">
-       <div>
-        <span className="section-kicker">COMMUNITY</span>
+        <div>
+          <span className="section-kicker">COMMUNITY</span>
 
-        <h3>
-       {linked
-          ? "Discord Connected"
-          : "Connect your Discord"}
-          </h3>
+          <h3>{linked ? "Discord Connected" : "Connect your Discord"}</h3>
 
           <p>
             {linked
               ? "Your Mahei-Pathap account is connected to your Discord account."
               : "Link your Mahei-Pathap account with your Discord account so your study activity can be connected later."}
           </p>
-          </div>
+        </div>
         <MessageCircle size={32} />
       </div>
       {linked && (
-  <div className="discord-connect-card">
-    <div className="discord-connect-icon">
-      <ShieldCheck size={28} />
-    </div>
+        <div className="discord-connect-card">
+          <div className="discord-connect-icon">
+            <ShieldCheck size={28} />
+          </div>
 
-    <div className="discord-connect-content">
-      <h4>Discord account successfully linked</h4>
+          <div className="discord-connect-content">
+            <h4>Discord account successfully linked</h4>
 
-      <p>
-        {discordUsername
-          ? <>Connected as <strong>{discordUsername}</strong>.</>
-          : "Your Discord account is connected to your Mahei-Pathap account."}
-      </p>
+            <p>
+              {discordUsername ? (
+                <>
+                  Connected as <strong>{discordUsername}</strong>.
+                </>
+              ) : (
+                "Your Discord account is connected to your Mahei-Pathap account."
+              )}
+            </p>
 
-      <a
-        className="dark-button"
-        href={inviteUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <MessageCircle size={16} /> Open Discord
-      </a>
-    </div>
-  </div>
-)}
-    {!linked && (
-  <>
-      <div className="discord-connect-card">
-        <div className="discord-connect-icon"><Link2 size={28} /></div>
-        <div className="discord-connect-content">
-          <h4>1. Join the Mahei-Pathap Discord</h4>
-          <p>Join the server first, then use the one-time code below to link the two accounts.</p>
-          <a className="dark-button" href={inviteUrl} target="_blank" rel="noopener noreferrer">
-            <MessageCircle size={16} /> Join Discord
-          </a>
+            <a
+              className="dark-button"
+              href={inviteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <MessageCircle size={16} /> Open Discord
+            </a>
+          </div>
         </div>
-      </div>
-
-      <div className="discord-connect-card">
-        <div className="discord-connect-icon"><Link2 size={28} /></div>
-        <div className="discord-connect-content">
-          <h4>2. Generate your linking code</h4>
-          <p>Generate a short-lived code while signed in to Mahei-Pathap. Never share this code with anyone.</p>
-          <button className="dark-button" type="button" onClick={onCreateCode} disabled={loading}>
-            <Link2 size={16} /> {loading ? "Generating…" : linkCode ? "Generate New Code" : "Generate Link Code"}
-          </button>
-
-          {linkCode && (
-            <div className="discord-link-code">
-              <strong>{linkCode}</strong>
-              <button type="button" onClick={onCopyCode} aria-label="Copy Discord link code">
-                {copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-              </button>
-              {expiresAt && <small>Expires {new Date(expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</small>}
+      )}
+      {!linked && (
+        <>
+          <div className="discord-connect-card">
+            <div className="discord-connect-icon">
+              <Link2 size={28} />
             </div>
-          )}
-        </div>
-      </div>
+            <div className="discord-connect-content">
+              <h4>1. Join the Mahei-Pathap Discord</h4>
+              <p>
+                Join the server first, then use the one-time code below to link
+                the two accounts.
+              </p>
+              <a
+                className="dark-button"
+                href={inviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle size={16} /> Join Discord
+              </a>
+            </div>
+          </div>
 
-      <div className="discord-connect-card">
-        <div className="discord-connect-icon"><MessageCircle size={28} /></div>
-        <div className="discord-connect-content">
-          <h4>3. Confirm inside Discord</h4>
-          <p>In the Mahei-Pathap Discord server, run <code>/link YOUR-CODE</code>. The bot will securely attach your Discord ID to your Mahei-Pathap account.</p>
-        </div>
-      </div>
-    </>
-)}
+          <div className="discord-connect-card">
+            <div className="discord-connect-icon">
+              <Link2 size={28} />
+            </div>
+            <div className="discord-connect-content">
+              <h4>2. Generate your linking code</h4>
+              <p>
+                Generate a short-lived code while signed in to Mahei-Pathap.
+                Never share this code with anyone.
+              </p>
+              <button
+                className="dark-button"
+                type="button"
+                onClick={onCreateCode}
+                disabled={loading}
+              >
+                <Link2 size={16} />{" "}
+                {loading
+                  ? "Generating…"
+                  : linkCode
+                    ? "Generate New Code"
+                    : "Generate Link Code"}
+              </button>
+
+              {linkCode && (
+                <div className="discord-link-code">
+                  <strong>{linkCode}</strong>
+                  <button
+                    type="button"
+                    onClick={onCopyCode}
+                    aria-label="Copy Discord link code"
+                  >
+                    {copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                  </button>
+                  {expiresAt && (
+                    <small>
+                      Expires{" "}
+                      {new Date(expiresAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </small>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="discord-connect-card">
+            <div className="discord-connect-icon">
+              <MessageCircle size={28} />
+            </div>
+            <div className="discord-connect-content">
+              <h4>3. Confirm inside Discord</h4>
+              <p>
+                In the Mahei-Pathap Discord server, run{" "}
+                <code>/link YOUR-CODE</code>. The bot will securely attach your
+                Discord ID to your Mahei-Pathap account.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
       {error && <div className="inline-error">{error}</div>}
     </section>
   );
@@ -2636,7 +3695,9 @@ function Dashboard({
             })}
           </span>
 
-          <h1>{greeting}, {userName}!</h1>
+          <h1>
+            {greeting}, {userName}!
+          </h1>
 
           <p>
             You have <strong>{pending.length} tasks</strong> waiting and{" "}
@@ -2645,18 +3706,12 @@ function Dashboard({
           </p>
 
           <div className="welcome-buttons">
-            <button
-              className="white-button"
-              onClick={() => navigate("tasks")}
-            >
+            <button className="white-button" onClick={() => navigate("tasks")}>
               <CheckSquare size={17} />
               View today&apos;s tasks
             </button>
 
-            <button
-              className="glass-button"
-              onClick={() => navigate("focus")}
-            >
+            <button className="glass-button" onClick={() => navigate("focus")}>
               <Play size={16} />
               Quick focus
             </button>
@@ -2701,7 +3756,7 @@ function Dashboard({
       <section className="dashboard-grid">
         <div className="card">
           <SectionHeader
-            title="Today&apos;s Tasks"
+            title="Today's Tasks"
             icon="📝"
             color="orange"
             action="View all"
@@ -2710,11 +3765,7 @@ function Dashboard({
 
           <div className="item-list">
             {tasks.slice(0, 4).map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onToggle={toggleTask}
-              />
+              <TaskRow key={task.id} task={task} onToggle={toggleTask} />
             ))}
 
             {tasks.length === 0 && <EmptyState text="No tasks yet 🎉" />}
@@ -2732,10 +3783,7 @@ function Dashboard({
 
           <div className="item-list">
             {assignments.slice(0, 3).map((assignment) => (
-              <AssignmentMini
-                key={assignment.id}
-                assignment={assignment}
-              />
+              <AssignmentMini key={assignment.id} assignment={assignment} />
             ))}
 
             {assignments.length === 0 && (
@@ -2778,9 +3826,10 @@ function Dashboard({
 
 function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
   const [search, setSearch] = useState("");
+  const [selectedTask, setSelectedTask] = useState(null);
 
   const filtered = tasks.filter((task) =>
-    task.title.toLowerCase().includes(search.toLowerCase())
+    task.title.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -2825,7 +3874,10 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
                 {task.status === "Completed" && <Check size={15} />}
               </button>
 
-              <div>
+              <div
+                onClick={() => setSelectedTask(task)}
+                style={{ cursor: "pointer", flex: 1 }}
+              >
                 <h3>{task.title}</h3>
 
                 <p>{task.notes || "No notes added."}</p>
@@ -2857,6 +3909,117 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
           <EmptyState text="No matching tasks found." />
         )}
       </div>
+      {selectedTask && (
+        <div
+          onClick={() => setSelectedTask(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(64, 54, 47, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "20px",
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(700px, 100%)",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              background: "#fffdf9",
+              border: "1px solid #e4d9cf",
+              borderRadius: "18px",
+              boxShadow: "0 20px 50px rgba(64, 54, 47, 0.18)",
+              padding: "24px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: "16px",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#9b6a4c",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.05em",
+                    marginBottom: "8px",
+                  }}
+                >
+                  Task details
+                </div>
+
+                <h2
+                  style={{
+                    margin: 0,
+                    color: "#40362f",
+                    fontSize: "24px",
+                  }}
+                >
+                  {selectedTask.title}
+                </h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedTask(null)}
+                style={{
+                  border: "none",
+                  background: "#f3ebe4",
+                  color: "#40362f",
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  fontSize: "20px",
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                flexWrap: "wrap",
+                marginTop: "18px",
+              }}
+            >
+              <span className="tag orange">{selectedTask.category}</span>
+              <span className="tag gray">{selectedTask.estTime} min</span>
+              <span className="tag gray">
+                {formatDate(selectedTask.deadline)}
+              </span>
+              <span className="tag yellow">{selectedTask.priority}</span>
+            </div>
+
+            <div
+              style={{
+                marginTop: "22px",
+                padding: "18px",
+                background: "#f7f0e8",
+                borderRadius: "14px",
+                color: "#40362f",
+                fontSize: "15px",
+                lineHeight: 1.7,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {selectedTask.notes || "No description added."}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2980,8 +4143,8 @@ function SkillsPage({
             100,
             Number.isFinite(Number(skill.progress))
               ? Number(skill.progress)
-              : watchedProgress
-          )
+              : watchedProgress,
+          ),
         );
 
         return (
@@ -3069,14 +4232,16 @@ function SkillsPage({
                     </div>
 
                     <div className="video-notes">
-                      <label htmlFor={`video-notes-${video.id}`}>
-                        Notes
-                      </label>
+                      <label htmlFor={`video-notes-${video.id}`}>Notes</label>
                       <textarea
                         id={`video-notes-${video.id}`}
                         value={video.notes || ""}
                         onChange={(event) =>
-                          updateVideoNotes(skill.id, video.id, event.target.value)
+                          updateVideoNotes(
+                            skill.id,
+                            video.id,
+                            event.target.value,
+                          )
                         }
                         placeholder="Write key takeaways while watching..."
                       />
@@ -3168,7 +4333,7 @@ function GoalsPage({ goals, addGoal, increaseGoal, deleteGoal }) {
 function CalendarPage({ tasks, assignments }) {
   const todayDate = new Date();
   const [viewDate, setViewDate] = useState(
-    new Date(todayDate.getFullYear(), todayDate.getMonth(), 1)
+    new Date(todayDate.getFullYear(), todayDate.getMonth(), 1),
   );
   const [selectedDate, setSelectedDate] = useState(today);
 
@@ -3189,7 +4354,7 @@ function CalendarPage({ tasks, assignments }) {
 
   function getEventsForDate(dateString) {
     return events.filter(
-      (item) => item.deadline === dateString || item.dueDate === dateString
+      (item) => item.deadline === dateString || item.dueDate === dateString,
     );
   }
 
@@ -3227,7 +4392,9 @@ function CalendarPage({ tasks, assignments }) {
             >
               <ChevronLeft size={17} />
             </button>
-            <button className="calendar-today" onClick={goToToday}>Today</button>
+            <button className="calendar-today" onClick={goToToday}>
+              Today
+            </button>
             <button
               className="icon-button"
               onClick={() => changeMonth(1)}
@@ -3240,13 +4407,11 @@ function CalendarPage({ tasks, assignments }) {
         </div>
 
         <div className="calendar-grid">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(
-            (day) => (
-              <div className="calendar-weekday" key={day}>
-                {day}
-              </div>
-            )
-          )}
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+            <div className="calendar-weekday" key={day}>
+              {day}
+            </div>
+          ))}
 
           {Array.from({ length: adjustedFirstDay }).map((_, index) => (
             <div className="calendar-empty" key={`empty-${index}`} />
@@ -3277,14 +4442,28 @@ function CalendarPage({ tasks, assignments }) {
         <div className="selected-day-events">
           <div className="selected-day-heading">
             <strong>{formatDate(selectedDate)}</strong>
-            <span>{selectedEvents.length} {selectedEvents.length === 1 ? "event" : "events"}</span>
+            <span>
+              {selectedEvents.length}{" "}
+              {selectedEvents.length === 1 ? "event" : "events"}
+            </span>
           </div>
           {selectedEvents.length === 0 ? (
-            <p className="calendar-no-events">No tasks or assignments for this day.</p>
+            <p className="calendar-no-events">
+              No tasks or assignments for this day.
+            </p>
           ) : (
             selectedEvents.map((item) => (
-              <div className="calendar-event-row" key={`${item.id}-${item.title}`}>
-                <span className={item.deadline ? "event-dot task-dot" : "event-dot assignment-dot"} />
+              <div
+                className="calendar-event-row"
+                key={`${item.id}-${item.title}`}
+              >
+                <span
+                  className={
+                    item.deadline
+                      ? "event-dot task-dot"
+                      : "event-dot assignment-dot"
+                  }
+                />
                 <strong>{item.title}</strong>
                 <span>{item.deadline ? "Task" : "Assignment"}</span>
               </div>
@@ -3346,9 +4525,7 @@ function FocusPage({
 
         <h3>Focus & Pomodoro</h3>
 
-        <p>
-          Work in small focused sessions and give your brain proper breaks.
-        </p>
+        <p>Work in small focused sessions and give your brain proper breaks.</p>
 
         <div className="timer-modes">
           <button
@@ -3407,7 +4584,11 @@ function FocusPage({
             disabled={focusActionBusy}
           >
             {timerRunning ? <Pause size={18} /> : <Play size={18} />}
-            {focusActionBusy ? "Working…" : timerRunning ? "Pause" : "Start Focus"}
+            {focusActionBusy
+              ? "Working…"
+              : timerRunning
+                ? "Pause"
+                : "Start Focus"}
           </button>
 
           <button className="reset-button" onClick={resetTimer}>
@@ -3423,18 +4604,21 @@ function FocusPage({
           <EmptyState text="Your completed focus sessions will appear here." />
         ) : (
           <div className="item-list">
-            {focusHistory.slice(-8).reverse().map((item) => (
-              <div className="upcoming-row" key={item.id}>
-                <div>
-                  <strong>{item.task}</strong>
-                  <span>
-                    {item.duration} minutes · {formatDate(item.date)}
-                  </span>
-                </div>
+            {focusHistory
+              .slice(-8)
+              .reverse()
+              .map((item) => (
+                <div className="upcoming-row" key={item.id}>
+                  <div>
+                    <strong>{item.task}</strong>
+                    <span>
+                      {item.duration} minutes · {formatDate(item.date)}
+                    </span>
+                  </div>
 
-                <Timer size={17} />
-              </div>
-            ))}
+                  <Timer size={17} />
+                </div>
+              ))}
           </div>
         )}
       </div>
@@ -3498,14 +4682,14 @@ function AnalyticsPage({
   goals,
 }) {
   const completedAssignments = assignments.filter(
-    (item) => item.progress === 100
+    (item) => item.progress === 100,
   ).length;
 
   const averageGoalProgress =
     goals.length === 0
       ? 0
       : Math.round(
-          goals.reduce((sum, goal) => sum + goal.progress, 0) / goals.length
+          goals.reduce((sum, goal) => sum + goal.progress, 0) / goals.length,
         );
 
   return (
@@ -3514,9 +4698,7 @@ function AnalyticsPage({
         <div>
           <span>📊 Your progress</span>
           <h2>You&apos;re building momentum!</h2>
-          <p>
-            Small consistent actions are turning into real progress.
-          </p>
+          <p>Small consistent actions are turning into real progress.</p>
         </div>
 
         <Trophy size={50} />
@@ -3569,9 +4751,7 @@ function AnalyticsPage({
             value={
               assignments.length === 0
                 ? 0
-                : Math.round(
-                    (completedAssignments / assignments.length) * 100
-                  )
+                : Math.round((completedAssignments / assignments.length) * 100)
             }
             suffix="%"
             color="coral"
@@ -3589,8 +4769,7 @@ function AnalyticsPage({
           />
 
           <p className="analytics-message">
-            Keep your learning streak alive. Even 20 minutes today counts.
-            🌱
+            Keep your learning streak alive. Even 20 minutes today counts. 🌱
           </p>
         </div>
       </div>
@@ -3610,9 +4789,7 @@ function ReviewPage({
   reviewStatus,
   onCompleteReview,
 }) {
-  const unfinished = tasks.filter(
-    (task) => task.status !== "Completed"
-  );
+  const unfinished = tasks.filter((task) => task.status !== "Completed");
 
   return (
     <div className="review-page">
@@ -3624,8 +4801,7 @@ function ReviewPage({
         <h2>Daily Review</h2>
 
         <p>
-          Take a moment to see what you accomplished and prepare for
-          tomorrow.
+          Take a moment to see what you accomplished and prepare for tomorrow.
         </p>
 
         <div className="review-stats">
@@ -3701,14 +4877,7 @@ function StatCard({ icon, title, value, extra, color }) {
   );
 }
 
-function PageIntro({
-  title,
-  description,
-  buttonText,
-  onClick,
-  icon,
-  color,
-}) {
+function PageIntro({ title, description, buttonText, onClick, icon, color }) {
   return (
     <div className="page-intro">
       <div>
@@ -3730,7 +4899,9 @@ function SectionHeader({ title, icon, action, onAction, color }) {
     <div className="section-header">
       <div className="section-title">
         <span className={`section-dot ${color}`} />
-        <h3>{icon} {title}</h3>
+        <h3>
+          {icon} {title}
+        </h3>
       </div>
 
       {action && (
@@ -3771,11 +4942,7 @@ function TaskRow({ task, onToggle }) {
 
 function PriorityTag({ priority }) {
   const className =
-    priority === "High"
-      ? "high"
-      : priority === "Medium"
-      ? "medium"
-      : "low";
+    priority === "High" ? "high" : priority === "Medium" ? "medium" : "low";
 
   return <span className={`priority ${className}`}>{priority}</span>;
 }
@@ -3905,11 +5072,15 @@ function LoginPage({
                     className="password-strength-fill"
                     style={{
                       width: `${passwordStrength}%`,
-                      backgroundColor: getPasswordStrengthColor(passwordStrength),
+                      backgroundColor:
+                        getPasswordStrengthColor(passwordStrength),
                     }}
                   />
                 </div>
-                <span className="password-strength-text" style={{ color: getPasswordStrengthColor(passwordStrength) }}>
+                <span
+                  className="password-strength-text"
+                  style={{ color: getPasswordStrengthColor(passwordStrength) }}
+                >
                   {getPasswordStrengthLevel(passwordStrength)}
                 </span>
               </div>
@@ -3923,7 +5094,10 @@ function LoginPage({
                 type="password"
                 value={authForm.confirmPassword}
                 onChange={(event) =>
-                  setAuthForm({ ...authForm, confirmPassword: event.target.value })
+                  setAuthForm({
+                    ...authForm,
+                    confirmPassword: event.target.value,
+                  })
                 }
                 placeholder="Confirm your password"
                 required
@@ -3933,7 +5107,8 @@ function LoginPage({
 
           {!isAppwriteConfigured && (
             <p className="auth-hint">
-              Appwrite is not configured yet, so the app is running in demo mode.
+              Appwrite is not configured yet, so the app is running in demo
+              mode.
             </p>
           )}
 
@@ -3953,7 +5128,9 @@ function LoginPage({
             {authMode === "login" ? "Login" : "Create account"}
           </button>
 
-          <div className="auth-divider"><span>or</span></div>
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
 
           <button
             type="button"
@@ -3966,9 +5143,23 @@ function LoginPage({
 
           <p className="recaptcha-notice">
             This site is protected by reCAPTCHA and the Google
-            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer"> Privacy Policy</a>
+            <a
+              href="https://policies.google.com/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {" "}
+              Privacy Policy
+            </a>
             and
-            <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer"> Terms of Service</a>
+            <a
+              href="https://policies.google.com/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {" "}
+              Terms of Service
+            </a>
             apply.
           </p>
         </form>
@@ -4002,15 +5193,14 @@ function CreatePanel({
   const isGoal = type === "goal";
   const isNote = type === "note";
 
-  const title =
-    isTask
-      ? "Add New Task"
-      : isAssignment
-        ? "Add Assignment"
-        : isSkill
-          ? "Add New Skill"
-          : isVideo
-            ? "Add YouTube Lesson"
+  const title = isTask
+    ? "Add New Task"
+    : isAssignment
+      ? "Add Assignment"
+      : isSkill
+        ? "Add New Skill"
+        : isVideo
+          ? "Add YouTube Lesson"
           : isGoal
             ? "Add Goal"
             : "Add Note";
@@ -4024,7 +5214,11 @@ function CreatePanel({
             <h3>{title}</h3>
           </div>
 
-          <button className="panel-close" onClick={onClose} aria-label="Close panel">
+          <button
+            className="panel-close"
+            onClick={onClose}
+            aria-label="Close panel"
+          >
             <X size={18} />
           </button>
         </div>
@@ -4157,7 +5351,10 @@ function CreatePanel({
                   type="text"
                   value={assignmentForm.title}
                   onChange={(event) =>
-                    setAssignmentForm({ ...assignmentForm, title: event.target.value })
+                    setAssignmentForm({
+                      ...assignmentForm,
+                      title: event.target.value,
+                    })
                   }
                   placeholder="Research paper"
                   required
@@ -4302,7 +5499,10 @@ function CreatePanel({
                   <select
                     value={goalForm.timeframe}
                     onChange={(event) =>
-                      setGoalForm({ ...goalForm, timeframe: event.target.value })
+                      setGoalForm({
+                        ...goalForm,
+                        timeframe: event.target.value,
+                      })
                     }
                   >
                     <option>Weekly</option>
@@ -4347,7 +5547,10 @@ function CreatePanel({
                     type="date"
                     value={goalForm.targetDate}
                     onChange={(event) =>
-                      setGoalForm({ ...goalForm, targetDate: event.target.value })
+                      setGoalForm({
+                        ...goalForm,
+                        targetDate: event.target.value,
+                      })
                     }
                   />
                 </label>
@@ -4402,7 +5605,11 @@ function CreatePanel({
           {panelError && <p className="auth-error">{panelError}</p>}
 
           <div className="panel-actions">
-            <button type="button" className="secondary-button" onClick={onClose}>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+            >
               Cancel
             </button>
             <button type="submit" className="primary-button orange">
@@ -4420,7 +5627,10 @@ function BigMetric({ label, value, suffix, color }) {
     <div className="big-metric">
       <div className="progress-header">
         <span>{label}</span>
-        <strong>{value}{suffix}</strong>
+        <strong>
+          {value}
+          {suffix}
+        </strong>
       </div>
 
       <div className="progress-track">

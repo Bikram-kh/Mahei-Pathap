@@ -178,3 +178,88 @@ account.listMemberships = async () => {
    ========================================================= */
 
 export { Query };
+
+
+
+
+export async function askAiCoach(message, context = {}) {
+  const functionId = import.meta.env.VITE_APPWRITE_AI_COACH_FUNCTION_ID;
+
+  if (!functionId) {
+    throw new Error("AI Coach function ID is not configured.");
+  }
+
+  const execution = await functions.createExecution(
+    functionId,
+    JSON.stringify({ message, context }),
+    false,
+    "/",
+    "POST",
+    {
+      "Content-Type": "application/json",
+    }
+  );
+
+  const response = JSON.parse(execution.responseBody || "{}");
+
+  if (!response.success) {
+    throw new Error(response.error || "AI Coach request failed.");
+  }
+
+  return response.reply;
+}
+
+
+export async function generateStudyPlan(context = {}) {
+  const functionId = import.meta.env.VITE_APPWRITE_AI_PLANNER_FUNCTION_ID;
+
+  if (!functionId) {
+    throw new Error("AI Planner function ID is not configured.");
+  }
+
+  const execution = await functions.createExecution(
+    functionId,
+    JSON.stringify({ context }),
+    false,
+    "/",
+    "POST",
+    {
+      "Content-Type": "application/json",
+    }
+  );
+
+  const response = JSON.parse(execution.responseBody || "{}");
+
+  if (!response.success) {
+    throw new Error(response.error || "AI Study Planner request failed.");
+  }
+
+  return response.reply;
+}
+
+export async function generateAiAgentAction(message, context = {}) {
+  const functionId = import.meta.env.VITE_APPWRITE_AI_AGENT_FUNCTION_ID;
+
+  if (!functionId) {
+    throw new Error("AI Agent function ID is not configured.");
+  }
+
+  const execution = await functions.createExecution(
+    functionId,
+    JSON.stringify({ message, context }),
+    false,
+    "/",
+    "POST",
+    {
+      "Content-Type": "application/json",
+    }
+  );
+
+  const response = JSON.parse(execution.responseBody || "{}");
+
+  if (!response.success) {
+    throw new Error(response.error || "AI Agent request failed.");
+  }
+
+  return response;
+}
