@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ID } from "appwrite";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { ID, Permission, Role } from "appwrite";
 
 import {
   LayoutDashboard,
@@ -42,6 +42,8 @@ import {
   CheckCircle2,
   Megaphone,
   ShieldCheck,
+  Pencil,
+  ShoppingBag,
 } from "lucide-react";
 
 import {
@@ -53,6 +55,8 @@ import {
   APPWRITE_FOCUS_COLLECTION_ID,
   APPWRITE_GOALS_COLLECTION_ID,
   APPWRITE_NOTES_COLLECTION_ID,
+  APPWRITE_CALENDAR_EVENTS_COLLECTION_ID,
+  APPWRITE_SUGGESTIONS_COLLECTION_ID,
   APPWRITE_SKILLS_COLLECTION_ID,
   APPWRITE_TASKS_COLLECTION_ID,
   databases,
@@ -61,6 +65,7 @@ import {
   askAiCoach,
   generateStudyPlan,
   generateAiAgentAction,
+  teacherRequest,
 } from "./lib/appwrite";
 import { isAdminUser } from "./lib/auth";
 import {
@@ -70,11 +75,29 @@ import {
   validateSignupForm,
 } from "./lib/validators";
 import { useGoogleReCaptcha } from "./lib/recaptcha.jsx";
+import AiResponse from "./components/AiResponse";
+import AiTeacher from "./components/AiTeacher";
 import AboutPage from "./components/AboutPage";
 import DonationPage from "./components/DonationPage";
 import SuggestionsPage from "./components/SuggestionsPage";
 import AnnouncementsPage from "./components/AnnouncementsPage";
 import AdminDashboard from "./components/AdminDashboard";
+import NoteContent from "./components/NoteContent";
+import ProfilePage from "./components/ProfilePage";
+import NotesStorePage from "./components/NotesStorePage";
+import {
+  createStudentProfile,
+  normalizeStudentProfile,
+} from "./lib/studentProfile";
+import {
+  decodeNoteToHtml,
+  encodeRichNote,
+  MAX_NOTE_CONTENT_LENGTH,
+  noteContentToPlainText,
+  noteHtmlToPlainText,
+} from "./lib/noteContent";
+
+const RichTextEditor = lazy(() => import("./components/RichTextEditor"));
 
 /* =========================================================
    HELPERS
@@ -89,11 +112,111 @@ function getLocalDateString(date = new Date()) {
 
 const today = getLocalDateString();
 const USER_NAME_STORAGE_KEY = "mahei-pathap_user";
+const STUDENT_PROFILE_STORAGE_KEY = "mahei-pathap_student_profile";
 const DISCORD_INVITE_URL =
   import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/BmYmwRrheX";
 const DISCORD_LINK_FUNCTION_ENABLED = Boolean(
   APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID,
 );
+
+const TOPIC_SUGGESTIONS = {
+  mathematics: {
+    middle: ["Fractions and decimals", "Algebra basics", "Geometry", "Data handling"],
+    class9: ["Number systems", "Polynomials", "Coordinate geometry", "Linear equations"],
+    class10: ["Real numbers", "Quadratic equations", "Trigonometry", "Statistics"],
+    senior: ["Relations and functions", "Calculus", "Matrices", "Probability"],
+    college: ["Calculus", "Linear algebra", "Discrete mathematics", "Statistics"],
+  },
+  science: {
+    middle: ["Force and pressure", "Light", "Cell structure", "Metals and non-metals"],
+    class9: ["Motion", "Atoms and molecules", "Tissues", "Gravitation"],
+    class10: ["Chemical reactions", "Life processes", "Electricity", "Light and lenses"],
+    senior: ["Mechanics", "Organic chemistry", "Genetics", "Electrostatics"],
+    college: ["Physics", "Chemistry", "Biology", "Laboratory skills"],
+  },
+  english: {
+    middle: ["Grammar basics", "Reading comprehension", "Paragraph writing", "Vocabulary"],
+    class9: ["Grammar and editing", "Descriptive writing", "Reading skills", "Literature"],
+    class10: ["Formal writing", "Analytical paragraphs", "Grammar revision", "Literature"],
+    senior: ["Advanced writing", "Literary analysis", "Comprehension", "Grammar revision"],
+    college: ["Academic writing", "Communication skills", "Critical reading", "Literary analysis"],
+  },
+  computerScience: {
+    middle: ["Computer basics", "Scratch programming", "Internet safety", "Coding fundamentals"],
+    class9: ["Programming basics", "Digital documentation", "Database basics", "Cyber safety"],
+    class10: ["Python basics", "Functions and lists", "SQL and databases", "Computer networks"],
+    senior: ["Python programming", "Data structures", "Database management", "Computer networks"],
+    college: ["Data structures and algorithms", "Object-oriented programming", "DBMS", "Operating systems"],
+  },
+};
+
+function getLearningStage(level = "") {
+  const normalizedLevel = level.toLowerCase();
+  if (normalizedLevel.includes("college") || normalizedLevel.includes("university")) return "college";
+  if (normalizedLevel.includes("11") || normalizedLevel.includes("12")) return "senior";
+  if (normalizedLevel.includes("10")) return "class10";
+  if (normalizedLevel.includes("9")) return "class9";
+  return "middle";
+}
+
+function getTopicSuggestions(subject = "", level = "") {
+  const normalizedSubject = subject.toLowerCase();
+  let subjectKey = "";
+
+  if (normalizedSubject.includes("math")) subjectKey = "mathematics";
+  else if (normalizedSubject.includes("computer") || normalizedSubject.includes("coding")) subjectKey = "computerScience";
+  else if (normalizedSubject.includes("science")) subjectKey = "science";
+  else if (normalizedSubject.includes("english")) subjectKey = "english";
+
+  return subjectKey
+    ? TOPIC_SUGGESTIONS[subjectKey][getLearningStage(level)]
+    : ["Current chapter", "A difficult topic", "Exam syllabus", "Assignment topic"];
+}
+
+const STUDY_PLAN_QUESTIONS = [
+  {
+    key: "subject",
+    question: "Which subject do you want to study?",
+    placeholder: "Write another subject, such as Economics",
+    options: ["Mathematics", "Science", "English", "Computer Science"],
+  },
+  {
+    key: "level",
+    question: "Which class or learning level are you in?",
+    placeholder: "Write your class, course, or learning level",
+    options: ["Class 6–8", "Class 9", "Class 10", "Class 11–12", "College / University"],
+  },
+  {
+    key: "topic",
+    question: "Which topic do you want to learn?",
+    placeholder: "Write the topic or chapter name",
+    options: [],
+  },
+  {
+    key: "goal",
+    question: "What would you like to achieve?",
+    placeholder: "Write your own learning goal",
+    options: ["Understand the basics", "Revise for an exam", "Practise questions", "Finish an assignment"],
+  },
+  {
+    key: "time",
+    question: "How much time can you study today?",
+    placeholder: "Write another amount of time",
+    options: ["25 minutes", "45 minutes", "1 hour", "90 minutes"],
+  },
+  {
+    key: "confidence",
+    question: "How confident do you feel about this topic?",
+    placeholder: "Describe how confident you feel",
+    options: ["Just starting", "A little confident", "Fairly confident", "Very confident"],
+  },
+  {
+    key: "deadline",
+    question: "When do you need to be ready?",
+    placeholder: "Write a date or explain your deadline",
+    options: ["No deadline", "Today", "This week", "Next week"],
+  },
+];
 
 function createId() {
   return Date.now() + Math.floor(Math.random() * 1000);
@@ -178,6 +301,12 @@ function getSkillsStorageKey(userId) {
   return userId ? `mahei-pathap_skills_${userId}` : "mahei-pathap_skills";
 }
 
+function getCalendarEventsStorageKey(userId) {
+  return userId
+    ? `mahei-pathap_calendar-events_${userId}`
+    : "mahei-pathap_calendar-events";
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
 
@@ -241,6 +370,18 @@ function getDaysUntil(date) {
   const target = new Date(`${date}T00:00:00`);
 
   return Math.ceil((target - now) / 86400000);
+}
+
+function isValidCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+  const parsed = new Date(`${value}T00:00:00`);
+  const [year, month, day] = value.split("-").map(Number);
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.getFullYear() === year &&
+    parsed.getMonth() + 1 === month &&
+    parsed.getDate() === day
+  );
 }
 
 /* =========================================================
@@ -403,6 +544,7 @@ function createGoalDraft() {
 
 function createNoteDraft() {
   return {
+    id: null,
     title: "",
     content: "",
     category: "Journal",
@@ -458,20 +600,99 @@ export default function App() {
   const [aiError, setAiError] = useState("");
   const [aiSubmittedMessage, setAiSubmittedMessage] = useState("");
   const [studyPlan, setStudyPlan] = useState("");
+  const [studyPlanContext, setStudyPlanContext] = useState(null);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState("");
+  const [studyPlanTaskStatus, setStudyPlanTaskStatus] = useState("");
+  const [studyPlanGoalStatus, setStudyPlanGoalStatus] = useState("");
   const [planInterviewActive, setPlanInterviewActive] = useState(false);
   const [planInterviewStep, setPlanInterviewStep] = useState(0);
   const [planInterviewAnswer, setPlanInterviewAnswer] = useState("");
   const [planInterviewAnswers, setPlanInterviewAnswers] = useState([]);
-  const planInterviewQuestions = [
-    "Which subject do you want to study?",
-    "Which topic or chapter do you want to focus on?",
-    "What do you want to achieve in this topic?",
-    "How much time can you study today?",
-    "How confident are you with this topic right now?",
-    "Do you have any deadline, exam, or important date for this topic?",
-  ];
+  const currentPlanQuestion = STUDY_PLAN_QUESTIONS[planInterviewStep];
+  const currentPlanQuestionText =
+    currentPlanQuestion.key === "topic"
+      ? `Which ${planInterviewAnswers[0] || "subject"} topic do you want to learn for ${planInterviewAnswers[1] || "your level"}?`
+      : currentPlanQuestion.question;
+  const currentPlanOptions =
+    currentPlanQuestion.key === "topic"
+      ? getTopicSuggestions(planInterviewAnswers[0], planInterviewAnswers[1])
+      : currentPlanQuestion.options;
+
+  async function getAssistantContext() {
+    let teacherLearning = null;
+    try {
+      const teacherState = await teacherRequest({ action: "load" });
+      if (teacherState) {
+        teacherLearning = {
+          subject: teacherState.profile?.subject,
+          level: teacherState.profile?.level,
+          goal: teacherState.profile?.goal,
+          currentTopic: teacherState.roadmap?.find(
+            (topic) => topic.id === teacherState.currentTopicId,
+          ),
+          roadmap: teacherState.roadmap?.map(({ id, title, status }) => ({
+            id,
+            title,
+            status,
+          })),
+          latestResult: teacherState.results?.at(-1),
+        };
+      }
+    } catch {
+      // The rest of Mahei Assistance remains available when AI Teacher is not configured.
+    }
+
+    return {
+      currentDate: today,
+      studentProfile,
+      tasks,
+      assignments,
+      skills,
+      goals,
+      notes: notes.map(({ id, title, content, category, date }) => ({
+        id,
+        title,
+        content: noteContentToPlainText(content).slice(0, 500),
+        category,
+        date,
+      })),
+      calendarEvents: calendarEvents.map(
+        ({ id, title, date, startTime, endTime, description, category }) => ({
+          id,
+          title,
+          date,
+          startTime,
+          endTime,
+          description,
+          category,
+        }),
+      ),
+      focusHistory,
+      teacherLearning,
+      availablePages: [
+        "dashboard",
+        "profile",
+        "tasks",
+        "assignments",
+        "skills",
+        "goals",
+        "calendar",
+        "focus",
+        "notes",
+        "notes-store",
+        "analytics",
+        "review",
+        "suggestions",
+        "announcements",
+        "discord",
+        "about",
+        "donation",
+        ...(isAdmin ? ["admin"] : []),
+        "ai-teacher",
+      ],
+    };
+  }
 
   async function handleAiCoach() {
     const message = aiMessage.trim();
@@ -485,25 +706,24 @@ export default function App() {
     setAiSubmittedMessage(message);
 
     try {
-      const agentResult = await handleAiAgent(message);
+      const context = await getAssistantContext();
+      const agentResult = await handleAiAgent(message, context);
+
+      if (!agentResult.success) {
+        setAiReply(agentResult.reply || "Mahei Assistance could not complete that action.");
+        return;
+      }
 
       if (agentResult.success && agentResult.action !== "none") {
         setAiReply(agentResult.reply || "Action completed successfully.");
         return;
       }
 
-      const reply = await askAiCoach(message, {
-        currentDate: today,
-        tasks,
-        assignments,
-        skills,
-        goals,
-        focusHistory,
-      });
+      const reply = await askAiCoach(message, context);
 
       setAiReply(reply);
     } catch (error) {
-      setAiError(error.message || "Unable to contact the AI Coach.");
+      setAiError(error.message || "Unable to contact Mahei Assistance.");
     } finally {
       setAiLoading(false);
     }
@@ -526,31 +746,55 @@ export default function App() {
     setAiReply("");
     setAiError("");
     setAiSubmittedMessage("");
+    setStudyPlan("");
+    setStudyPlanContext(null);
+    setStudyPlanError("");
+    setStudyPlanTaskStatus("");
+    setStudyPlanGoalStatus("");
+    setPlanInterviewActive(false);
+    setPlanInterviewStep(0);
+    setPlanInterviewAnswer("");
+    setPlanInterviewAnswers([]);
   }
 
-  const handleGenerateStudyPlan = async () => {
-    setStudyPlanLoading(true);
+  function startStudyPlanInterview({ announce = true } = {}) {
+    setStudyPlan("");
+    setStudyPlanContext(null);
     setStudyPlanError("");
-    setAiReply("Sure, I'll help you create a study plan.");
+    setStudyPlanTaskStatus("");
+    setStudyPlanGoalStatus("");
+    setPlanInterviewActive(true);
+    setPlanInterviewStep(0);
+    setPlanInterviewAnswer("");
+    setPlanInterviewAnswers([]);
 
-    try {
-      const plan = await generateStudyPlan({
-        currentDate: new Date().toISOString().split("T")[0],
-        tasks,
-        assignments,
-        skills,
-        goals,
-        focusHistory,
-      });
-
-      setStudyPlan(plan);
-    } catch (error) {
-      console.error("Study Planner error:", error);
-      setStudyPlanError(error.message || "Failed to generate study plan.");
-    } finally {
-      setStudyPlanLoading(false);
+    if (announce) {
+      setAiSubmittedMessage("Create a personalized study plan for me.");
+      setAiReply(
+        "Of course. Answer seven short questions below. You can choose an option or write your own answer, and I’ll use your answers to build the plan.",
+      );
     }
-  };
+  }
+
+  function handlePlanInterviewBack() {
+    if (planInterviewStep === 0 || studyPlanLoading) return;
+
+    const previousAnswers = [...planInterviewAnswers];
+    const previousAnswer = previousAnswers.pop() || "";
+    setPlanInterviewAnswers(previousAnswers);
+    setPlanInterviewStep((step) => step - 1);
+    setPlanInterviewAnswer(previousAnswer);
+    setStudyPlanError("");
+  }
+
+  function cancelPlanInterview() {
+    setPlanInterviewActive(false);
+    setPlanInterviewStep(0);
+    setPlanInterviewAnswer("");
+    setPlanInterviewAnswers([]);
+    setStudyPlanError("");
+    setAiReply("No problem. Start a new study plan whenever you are ready.");
+  }
 
   const handlePlanInterviewSubmit = async () => {
     const answer = planInterviewAnswer.trim();
@@ -559,21 +803,19 @@ export default function App() {
 
     const completeAnswers = [...planInterviewAnswers, answer];
 
-    if (completeAnswers.length < planInterviewQuestions.length) {
+    if (completeAnswers.length < STUDY_PLAN_QUESTIONS.length) {
       setPlanInterviewAnswers(completeAnswers);
       setPlanInterviewStep((prev) => prev + 1);
       setPlanInterviewAnswer("");
       return;
     }
 
-    const interview = {
-      subject: completeAnswers[0],
-      topic: completeAnswers[1],
-      goal: completeAnswers[2],
-      time: completeAnswers[3],
-      confidence: completeAnswers[4],
-      deadline: completeAnswers[5],
-    };
+    const interview = Object.fromEntries(
+      STUDY_PLAN_QUESTIONS.map((question, index) => [
+        question.key,
+        completeAnswers[index],
+      ]),
+    );
 
     setStudyPlanLoading(true);
     setStudyPlanError("");
@@ -593,6 +835,12 @@ export default function App() {
       });
 
       setStudyPlan(plan);
+      setStudyPlanContext(interview);
+      setStudyPlanTaskStatus("");
+      setStudyPlanGoalStatus("");
+      setAiReply(
+        "Your personalized study plan is ready. Review it below, then add it to Tasks when you are happy with it.",
+      );
       setPlanInterviewActive(false);
       setPlanInterviewStep(0);
       setPlanInterviewAnswer("");
@@ -605,175 +853,399 @@ export default function App() {
     }
   };
   const handleAddStudyPlanToTask = async () => {
-    console.log("TASK BUTTON CLICKED", {
-      studyPlan,
-      authUser,
-    });
-    if (!studyPlan || !authUser) return;
+    if (!studyPlan || studyPlanTaskStatus === "saving" || studyPlanTaskStatus === "saved") return;
+
+    setStudyPlanTaskStatus("saving");
 
     try {
       const totalMatch = studyPlan.match(/TOTAL:\s*(\d+)\s*minutes?/i);
       const estimatedMinutes = totalMatch ? Number(totalMatch[1]) : 30;
+      const subject = studyPlanContext?.subject || "Study";
+      const topic = studyPlanContext?.topic || "today's plan";
+      const task = {
+        title: `${subject}: ${topic}`,
+        category: "AI Study Plan",
+        priority: "Medium",
+        deadline: today,
+        estTime: estimatedMinutes,
+        notes: [
+          "AI TEACHER STUDY PLAN",
+          studyPlanContext?.level ? `Class or level: ${studyPlanContext.level}` : "",
+          studyPlanContext?.goal ? `Learning goal: ${studyPlanContext.goal}` : "",
+          "",
+          studyPlan,
+        ].filter(Boolean).join("\n"),
+        status: "Pending",
+      };
 
-      await databases.createDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_TASKS_COLLECTION_ID,
-        ID.unique(),
-        {
-          userId: authUser.$id,
-          title: "Today's AI Study Plan",
-          category: "College",
-          priority: "Medium",
-          deadline: new Date().toISOString().split("T")[0],
-          estTime: estimatedMinutes,
-          notes: studyPlan,
-          status: "Pending",
-        },
-      );
+      let savedTask = { id: createId(), ...task };
+      if (isAppwriteConfigured && authUser) {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_TASKS_COLLECTION_ID,
+          ID.unique(),
+          { userId: authUser.$id, ...task },
+        );
+        savedTask = mapTaskDocument(created);
+      }
+
+      setTasks((items) => [savedTask, ...items]);
+      setStudyPlanTaskStatus("saved");
 
       setAiReply("Today's study plan has been added to your Tasks.");
     } catch (error) {
       console.error("Add study plan to task error:", error);
+      setStudyPlanTaskStatus("error");
       setAiReply("I couldn't add the study plan to your Tasks.");
     }
   };
 
-  async function handleAiAgent(message) {
-    console.log("Testing AI Agent:", message);
+  const handleCreateStudyGoal = async () => {
+    if (!studyPlan || studyPlanGoalStatus === "saving" || studyPlanGoalStatus === "saved") return;
+
+    setStudyPlanGoalStatus("saving");
+    const target = new Date();
+    target.setDate(target.getDate() + 7);
+    const subject = studyPlanContext?.subject || "Study";
+    const topic = studyPlanContext?.topic || "study plan";
+    const goal = {
+      title: `Complete ${subject}: ${topic}`,
+      timeframe: "Weekly",
+      category: "Learning",
+      progress: 0,
+      targetDate: getLocalDateString(target),
+    };
 
     try {
-      const result = await generateAiAgentAction(message, {
-        currentDate: today,
-        tasks,
-        assignments,
-        skills,
-        goals,
-        focusHistory,
-      });
+      let savedGoal = { id: createId(), ...goal };
+      if (isAppwriteConfigured && authUser) {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_GOALS_COLLECTION_ID,
+          ID.unique(),
+          { userId: authUser.$id, ...goal },
+        );
+        savedGoal = mapGoalDocument(created);
+      }
 
-      console.log("AI Agent result:", result);
+      setGoals((items) => [savedGoal, ...items]);
+      setStudyPlanGoalStatus("saved");
+      setAiReply(`Your 7-day goal for ${topic} has been created.`);
+    } catch (error) {
+      console.error("Create study goal error:", error);
+      setStudyPlanGoalStatus("error");
+      setAiReply("I couldn't create the 7-day goal. Please try again.");
+    }
+  };
+
+  async function handleAiAgent(message, context) {
+    const clampProgress = (value) =>
+      Math.max(0, Math.min(100, Number(value) || 0));
+    const cleanText = (value, max = 500) =>
+      String(value || "").trim().slice(0, max);
+
+    const createResource = async ({ collectionId, payload, map, setItems, prepend = false }) => {
+      let item = { id: createId(), ...payload };
+      if (isAppwriteConfigured && authUser) {
+        const created = await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          collectionId,
+          ID.unique(),
+          { userId: authUser.$id, ...payload },
+        );
+        item = map(created);
+      }
+      setItems((items) => (prepend ? [item, ...items] : [...items, item]));
+      return item;
+    };
+
+    const updateResource = async ({ collectionId, id, payload, map, setItems }) => {
+      let item;
+      if (isAppwriteConfigured && authUser && typeof id === "string") {
+        item = map(
+          await databases.updateDocument(
+            APPWRITE_DATABASE_ID,
+            collectionId,
+            id,
+            payload,
+          ),
+        );
+      }
+      setItems((items) =>
+        items.map((current) =>
+          current.id === id ? item || { ...current, ...payload } : current,
+        ),
+      );
+    };
+
+    try {
+      const result = await generateAiAgentAction(message, context);
+      const parameters = result.parameters || {};
 
       if (result.action === "create_task") {
-        const parameters = result.parameters || {};
-
-        const newTask = {
-          title: String(parameters.title || "").trim(),
-          category: parameters.category || "Learning",
-          priority: parameters.priority || "Medium",
-          deadline: parameters.deadline || today,
-          estTime: Number(parameters.estTime) || 30,
-          notes: parameters.notes || "",
-          status: "Pending",
-        };
-
-        if (!newTask.title) {
-          return {
-            ...result,
-            success: false,
-            reply: "I could not determine the task title.",
-          };
-        }
-
-        if (isAppwriteConfigured && authUser) {
-          const created = await databases.createDocument(
-            APPWRITE_DATABASE_ID,
-            APPWRITE_TASKS_COLLECTION_ID,
-            ID.unique(),
-            {
-              userId: authUser.$id,
-              ...newTask,
-            },
-          );
-
-          setTasks((items) => [mapTaskDocument(created), ...items]);
-
-          return {
-            ...result,
-            success: true,
-            reply: `Task "${newTask.title}" was added successfully.`,
-          };
-        }
-
-        setTasks((items) => [
-          {
-            id: createId(),
-            ...newTask,
+        const title = cleanText(parameters.title, 200);
+        if (!title) return { ...result, action: "none", reply: "What should I call the task?" };
+        const priority = ["Low", "Medium", "High"].includes(parameters.priority)
+          ? parameters.priority
+          : "Medium";
+        await createResource({
+          collectionId: APPWRITE_TASKS_COLLECTION_ID,
+          payload: {
+            title,
+            category: cleanText(parameters.category, 80) || "Learning",
+            priority,
+            deadline: cleanText(parameters.deadline, 20) || today,
+            estTime: Math.max(5, Math.min(600, Number(parameters.estTime) || 30)),
+            notes: cleanText(parameters.notes, 1000),
+            status: "Pending",
           },
-          ...items,
-        ]);
+          map: mapTaskDocument,
+          setItems: setTasks,
+          prepend: true,
+        });
+        return { ...result, reply: `Added “${title}” to Tasks.` };
+      }
 
-        return {
-          ...result,
-          success: true,
-          reply: `Task "${newTask.title}" was added successfully.`,
+      if (result.action === "complete_task") {
+        const task = tasks.find((item) => item.id === parameters.id);
+        if (!task) return { ...result, action: "none", reply: "I could not find one exact task to complete." };
+        if (task.status !== "Completed") await toggleTask(task.id);
+        return { ...result, reply: `Marked “${task.title}” as completed.` };
+      }
+
+      if (result.action === "create_assignment") {
+        const title = cleanText(parameters.title, 200);
+        if (!title) return { ...result, action: "none", reply: "What is the assignment title?" };
+        await createResource({
+          collectionId: APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+          payload: {
+            title,
+            subject: cleanText(parameters.subject, 100) || "College",
+            description: cleanText(parameters.description, 1500),
+            dueDate: cleanText(parameters.dueDate, 20) || today,
+            progress: clampProgress(parameters.progress),
+            status: clampProgress(parameters.progress) === 100 ? "Completed" : "Not Started",
+          },
+          map: mapAssignmentDocument,
+          setItems: setAssignments,
+        });
+        return { ...result, reply: `Added “${title}” to Assignments.` };
+      }
+
+      if (result.action === "set_assignment_progress") {
+        const assignment = assignments.find((item) => item.id === parameters.id);
+        if (!assignment) return { ...result, action: "none", reply: "I could not find one exact assignment to update." };
+        const progress = clampProgress(parameters.progress);
+        await updateResource({
+          collectionId: APPWRITE_ASSIGNMENTS_COLLECTION_ID,
+          id: assignment.id,
+          payload: { progress, status: progress === 100 ? "Completed" : progress > 0 ? "In Progress" : "Not Started" },
+          map: mapAssignmentDocument,
+          setItems: setAssignments,
+        });
+        return { ...result, reply: `Updated “${assignment.title}” to ${progress}%.` };
+      }
+
+      if (result.action === "create_skill") {
+        const name = cleanText(parameters.name, 160);
+        if (!name) return { ...result, action: "none", reply: "Which skill should I add?" };
+        await createResource({
+          collectionId: APPWRITE_SKILLS_COLLECTION_ID,
+          payload: { name, category: cleanText(parameters.category, 80) || "Learning", notes: cleanText(parameters.notes, 1000), videos: [] },
+          map: mapSkillDocument,
+          setItems: setSkills,
+        });
+        return { ...result, reply: `Added “${name}” to Skill Learning.` };
+      }
+
+      if (result.action === "set_skill_progress") {
+        const skill = skills.find((item) => item.id === parameters.id);
+        if (!skill) return { ...result, action: "none", reply: "I could not find one exact skill to update." };
+        const progress = clampProgress(parameters.progress);
+        await updateResource({
+          collectionId: APPWRITE_SKILLS_COLLECTION_ID,
+          id: skill.id,
+          payload: { progress },
+          map: mapSkillDocument,
+          setItems: setSkills,
+        });
+        return { ...result, reply: `Updated “${skill.name}” to ${progress}%.` };
+      }
+
+      if (result.action === "add_skill_video") {
+        const skill = skills.find((item) => item.id === parameters.skillId);
+        const title = cleanText(parameters.title, 200);
+        const videoId = getYouTubeId(cleanText(parameters.url, 500));
+        if (!skill || !title || !videoId) {
+          return { ...result, action: "none", reply: "Tell me the exact skill, video title, and a valid YouTube link." };
+        }
+        const updatedSkill = {
+          ...skill,
+          videos: [
+            ...skill.videos,
+            { id: createId(), title, videoId, watched: false, notes: cleanText(parameters.notes, 1000) },
+          ],
         };
+        if (isAppwriteConfigured && authUser && typeof skill.id === "string") {
+          const saved = await databases.updateDocument(
+            APPWRITE_DATABASE_ID,
+            APPWRITE_SKILLS_COLLECTION_ID,
+            skill.id,
+            { videos: encodeVideosForAppwrite(updatedSkill.videos) },
+          );
+          setSkills((items) =>
+            items.map((item) => item.id === skill.id ? mapSkillDocument(saved) : item),
+          );
+        } else {
+          setSkills((items) =>
+            items.map((item) => item.id === skill.id ? updatedSkill : item),
+          );
+        }
+        return { ...result, reply: `Added “${title}” to ${skill.name}.` };
+      }
+
+      if (result.action === "set_video_watched") {
+        const skill = skills.find((item) => item.id === parameters.skillId);
+        const video = skill?.videos.find((item) => item.id === parameters.videoId);
+        if (!skill || !video) {
+          return { ...result, action: "none", reply: "I could not find one exact learning video to update." };
+        }
+        const watched = parameters.watched !== false;
+        if (video.watched !== watched) await toggleVideo(skill.id, video.id);
+        return { ...result, reply: `Marked “${video.title}” as ${watched ? "watched" : "not watched"}.` };
       }
 
       if (result.action === "create_goal") {
-        const parameters = result.parameters || {};
-
-        const newGoal = {
-          title: String(parameters.title || "").trim(),
-          timeframe: parameters.timeframe || "Weekly",
-          category: parameters.category || "Growth",
-          progress: Number(parameters.progress) || 0,
-          targetDate: parameters.targetDate || today,
-        };
-
-        if (!newGoal.title) {
-          return {
-            ...result,
-            success: false,
-            reply: "I could not determine the goal title.",
-          };
-        }
-
-        if (isAppwriteConfigured && authUser) {
-          const created = await databases.createDocument(
-            APPWRITE_DATABASE_ID,
-            APPWRITE_GOALS_COLLECTION_ID,
-            ID.unique(),
-            {
-              userId: authUser.$id,
-              ...newGoal,
-            },
-          );
-
-          setGoals((items) => [mapGoalDocument(created), ...items]);
-
-          return {
-            ...result,
-            success: true,
-            reply: `Goal "${newGoal.title}" was created successfully.`,
-          };
-        }
-
-        setGoals((items) => [
-          {
-            id: createId(),
-            ...newGoal,
+        const title = cleanText(parameters.title, 200);
+        if (!title) return { ...result, action: "none", reply: "What goal should I create?" };
+        await createResource({
+          collectionId: APPWRITE_GOALS_COLLECTION_ID,
+          payload: {
+            title,
+            timeframe: cleanText(parameters.timeframe, 50) || "Weekly",
+            category: cleanText(parameters.category, 80) || "Growth",
+            progress: clampProgress(parameters.progress),
+            targetDate: cleanText(parameters.targetDate, 20) || today,
           },
-          ...items,
-        ]);
+          map: mapGoalDocument,
+          setItems: setGoals,
+          prepend: true,
+        });
+        return { ...result, reply: `Created the goal “${title}”.` };
+      }
 
+      if (result.action === "set_goal_progress") {
+        const goal = goals.find((item) => item.id === parameters.id);
+        if (!goal) return { ...result, action: "none", reply: "I could not find one exact goal to update." };
+        const progress = clampProgress(parameters.progress);
+        await updateResource({ collectionId: APPWRITE_GOALS_COLLECTION_ID, id: goal.id, payload: { progress }, map: mapGoalDocument, setItems: setGoals });
+        return { ...result, reply: `Updated “${goal.title}” to ${progress}%.` };
+      }
+
+      if (result.action === "create_note") {
+        const title = cleanText(parameters.title, 200);
+        const content = cleanText(parameters.content, 5000);
+        if (!title || !content) return { ...result, action: "none", reply: "Tell me the note title and what you want saved." };
+        await createResource({
+          collectionId: APPWRITE_NOTES_COLLECTION_ID,
+          payload: { title, content, category: cleanText(parameters.category, 80) || "Journal", date: today },
+          map: mapNoteDocument,
+          setItems: setNotes,
+          prepend: true,
+        });
+        return { ...result, reply: `Saved “${title}” in Notes.` };
+      }
+
+      if (result.action === "create_calendar_event") {
+        const title = cleanText(parameters.title, 200);
+        const date = cleanText(parameters.date, 10);
+        const startTime = cleanText(parameters.startTime, 5);
+        const endTime = cleanText(parameters.endTime, 5);
+        if (!title || !isValidCalendarDate(date)) {
+          return {
+            ...result,
+            action: "none",
+            reply: "Tell me the event title and exact date.",
+          };
+        }
+        await createCalendarEvent({
+          title,
+          date,
+          startTime,
+          endTime,
+          description: cleanText(parameters.description, 1000),
+          category: cleanText(parameters.category, 40) || "Study",
+        });
         return {
           ...result,
-          success: true,
-          reply: `Goal "${newGoal.title}" was created successfully.`,
+          reply: `Added “${title}” to your calendar for ${formatDate(date)}.`,
         };
       }
 
-      return result;
+      if (result.action === "submit_suggestion") {
+        const suggestion = cleanText(parameters.suggestion, 1000);
+        if (!suggestion) {
+          return { ...result, action: "none", reply: "What suggestion would you like to submit?" };
+        }
+        if (!isAppwriteConfigured || !authUser || !APPWRITE_SUGGESTIONS_COLLECTION_ID) {
+          throw new Error("Suggestions are not configured for this account.");
+        }
+        const isAnonymous = parameters.isAnonymous === true;
+        await databases.createDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_SUGGESTIONS_COLLECTION_ID,
+          ID.unique(),
+          {
+            suggestion,
+            isAnonymous,
+            userId: authUser.$id,
+            userName: isAnonymous ? "" : (authUser.name || userName),
+            userEmail: isAnonymous ? "" : (authUser.email || ""),
+            status: "New",
+            createdAt: new Date().toISOString(),
+          },
+        );
+        return { ...result, reply: "Your suggestion was submitted." };
+      }
+
+      if (result.action === "prepare_focus_session") {
+        setFocusTask(cleanText(parameters.subject, 160) || "General Study");
+        setTimerModeAndReset("work");
+        navigate("focus");
+        return { ...result, reply: "Your 25-minute focus session is ready. Press Start when you are settled." };
+      }
+
+      if (result.action === "save_daily_review") {
+        await completeTodayReview();
+        navigate("review");
+        return { ...result, reply: "Your daily review has been processed. I opened the review page for you." };
+      }
+
+      if (result.action === "start_study_plan") {
+        startStudyPlanInterview({ announce: false });
+        return { ...result, reply: "I opened the study-plan questions. Answer them to create a plan that fits you." };
+      }
+
+      if (result.action === "open_ai_teacher") {
+        navigate("ai-teacher");
+        return { ...result, reply: "I opened AI Teacher so you can continue your lesson and roadmap." };
+      }
+
+      if (result.action === "open_page") {
+        const page = context.availablePages.includes(parameters.page) ? parameters.page : null;
+        if (!page) return { ...result, action: "none", reply: "Which section would you like me to open?" };
+        navigate(page);
+        return { ...result, reply: `Opened ${page.replaceAll("-", " ")}.` };
+      }
 
       return result;
     } catch (error) {
-      console.error("AI Agent error:", error);
-
+      console.error("Mahei Assistance action failed:", error);
       return {
         success: false,
         action: "none",
         parameters: {},
-        reply: error.message || "AI Agent request failed.",
+        reply: error.message || "Mahei Assistance could not complete that action.",
       };
     }
   }
@@ -786,7 +1258,35 @@ export default function App() {
       "Bikram",
   );
 
+  const [studentProfile, setStudentProfile] = useState(() =>
+    normalizeStudentProfile(
+      loadData(STUDENT_PROFILE_STORAGE_KEY, null),
+      localStorage.getItem(USER_NAME_STORAGE_KEY) || "Bikram",
+    ),
+  );
+
   const [tasks, setTasks] = useState(defaultTasks);
+
+  const teacherStudyPlans = useMemo(
+    () =>
+      tasks
+        .filter(
+          (task) =>
+            task.category === "AI Study Plan" ||
+            task.title === "Today's AI Study Plan" ||
+            String(task.notes || "").startsWith("AI TEACHER STUDY PLAN"),
+        )
+        .slice(0, 3)
+        .map(({ id, title, deadline, estTime, notes, status }) => ({
+          id,
+          title,
+          deadline,
+          estTime,
+          notes: String(notes || "").slice(0, 8000),
+          status,
+        })),
+    [tasks],
+  );
 
   const [assignments, setAssignments] = useState(defaultAssignments);
 
@@ -797,6 +1297,10 @@ export default function App() {
   const [goals, setGoals] = useState(defaultGoals);
 
   const [notes, setNotes] = useState(defaultNotes);
+
+  const [calendarEvents, setCalendarEvents] = useState(() =>
+    loadData(getCalendarEventsStorageKey(), []),
+  );
 
   const [focusHistory, setFocusHistory] = useState(defaultFocus);
 
@@ -860,9 +1364,21 @@ export default function App() {
     return {
       id: doc.$id,
       title: doc.title,
-      content: doc.content,
+      content: doc.content || "",
       category: doc.category || "Journal",
       date: doc.date || today,
+    };
+  }
+
+  function mapCalendarEventDocument(doc) {
+    return {
+      id: doc.$id,
+      title: doc.title || "Untitled event",
+      date: doc.date || today,
+      startTime: doc.startTime || "",
+      endTime: doc.endTime || "",
+      description: doc.description || "",
+      category: doc.category || "Study",
     };
   }
 
@@ -904,6 +1420,7 @@ export default function App() {
         goalDocuments,
         focusDocuments,
         noteDocuments,
+        calendarEventDocuments,
       ] = await Promise.all([
         listUserDocuments(APPWRITE_TASKS_COLLECTION_ID, userId),
         listUserDocuments(APPWRITE_ASSIGNMENTS_COLLECTION_ID, userId),
@@ -911,6 +1428,9 @@ export default function App() {
         listUserDocuments(APPWRITE_GOALS_COLLECTION_ID, userId),
         listUserDocuments(APPWRITE_FOCUS_COLLECTION_ID, userId),
         listUserDocuments(APPWRITE_NOTES_COLLECTION_ID, userId),
+        APPWRITE_CALENDAR_EVENTS_COLLECTION_ID
+          ? listUserDocuments(APPWRITE_CALENDAR_EVENTS_COLLECTION_ID, userId)
+          : Promise.resolve([]),
       ]);
 
       setTasks(taskDocuments.map(mapTaskDocument));
@@ -940,6 +1460,11 @@ export default function App() {
       setGoals(goalDocuments.map(mapGoalDocument));
       setFocusHistory(focusDocuments.map(mapFocusDocument));
       setNotes(noteDocuments.map(mapNoteDocument));
+      setCalendarEvents(
+        APPWRITE_CALENDAR_EVENTS_COLLECTION_ID
+          ? calendarEventDocuments.map(mapCalendarEventDocument)
+          : loadData(getCalendarEventsStorageKey(userId), []),
+      );
     } catch (error) {
       console.error("Failed to load Appwrite data:", error);
     }
@@ -1197,12 +1722,16 @@ export default function App() {
         currentUser.prefs?.emailVerificationPending
       ) {
         await account.updatePrefs({
+          ...currentUser.prefs,
           emailVerificationPending: false,
         });
       }
 
       // ✅ Allow login (email verification infrastructure is in place for future use)
       setAuthUser(currentUser);
+      setStudentProfile(
+        normalizeStudentProfile(currentUser.prefs?.studentProfile, currentUser.name),
+      );
       setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
       setIsAuthenticated(true);
       setUserName(currentUser.name || authForm.name || "Mahei-Pathap User");
@@ -1264,6 +1793,30 @@ export default function App() {
     setEmailVerificationSent(false);
   }
 
+  async function saveStudentProfile(profileInput) {
+    const normalized = normalizeStudentProfile(profileInput, userName);
+    if (!normalized.name) throw new Error("Enter your name before saving.");
+
+    if (isAppwriteConfigured && authUser) {
+      const currentUser = await account.get();
+      if (currentUser.name !== normalized.name) {
+        await account.updateName(normalized.name);
+      }
+      await account.updatePrefs({
+        ...(currentUser.prefs || {}),
+        studentProfile: normalized,
+      });
+      const updatedUser = await account.get();
+      setAuthUser(updatedUser);
+    } else {
+      saveData(STUDENT_PROFILE_STORAGE_KEY, normalized);
+    }
+
+    setStudentProfile(normalized);
+    setUserName(normalized.name);
+    localStorage.setItem(USER_NAME_STORAGE_KEY, normalized.name);
+  }
+
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const authErrorCode = searchParams.get("authError");
@@ -1307,6 +1860,9 @@ export default function App() {
       .get()
       .then(async (currentUser) => {
         setAuthUser(currentUser);
+        setStudentProfile(
+          normalizeStudentProfile(currentUser.prefs?.studentProfile, currentUser.name),
+        );
         setSkills(loadData(getSkillsStorageKey(currentUser.$id), []));
         setUserName(currentUser.name || userName);
         setIsAuthenticated(true);
@@ -1333,6 +1889,11 @@ export default function App() {
 
     saveData(getSkillsStorageKey(authUser?.$id), skills);
   }, [skills, authUser]);
+
+  useEffect(() => {
+    if (APPWRITE_CALENDAR_EVENTS_COLLECTION_ID && authUser) return;
+    saveData(getCalendarEventsStorageKey(authUser?.$id), calendarEvents);
+  }, [calendarEvents, authUser]);
 
   /* =========================================================
      POMODORO
@@ -1598,6 +2159,7 @@ export default function App() {
   ========================================================= */
 
   const navigation = [
+    { id: "ai-teacher", label: "AI Teacher", icon: GraduationCap, color: "orange" },
     {
       id: "dashboard",
       label: "Dashboard",
@@ -1605,8 +2167,14 @@ export default function App() {
       color: "orange",
     },
     {
+      id: "profile",
+      label: "My Profile",
+      icon: User,
+      color: "mint",
+    },
+    {
       id: "ai-coach",
-      label: "AI Coach",
+      label: "Mahei Assistance",
       icon: Sparkles,
       color: "orange",
     },
@@ -1651,6 +2219,12 @@ export default function App() {
       label: "Notes",
       icon: BookMarked,
       color: "mint",
+    },
+    {
+      id: "notes-store",
+      label: "Notes Store",
+      icon: ShoppingBag,
+      color: "orange",
     },
     {
       id: "analytics",
@@ -1721,7 +2295,15 @@ export default function App() {
     if (type === "skill") setSkillForm(createSkillDraft());
     if (type === "video") setVideoForm(createVideoDraft(payload.skillId || ""));
     if (type === "goal") setGoalForm(createGoalDraft());
-    if (type === "note") setNoteForm(createNoteDraft());
+    if (type === "note") {
+      const note = payload.note;
+      setNoteForm(note ? {
+        id: note.id,
+        title: note.title,
+        content: decodeNoteToHtml(note.content),
+        category: note.category || "Journal",
+      } : createNoteDraft());
+    }
   }
 
   function closePanel() {
@@ -2387,39 +2969,64 @@ export default function App() {
     openPanel("note");
   }
 
+  function editNote(note) {
+    openPanel("note", { note });
+  }
+
   async function submitNote(event) {
     event.preventDefault();
 
-    if (!noteForm.title.trim() || !noteForm.content.trim()) return;
+    const plainContent = noteHtmlToPlainText(noteForm.content);
+    if (!noteForm.title.trim() || !plainContent) {
+      setPanelError("Add a title and some note content before saving.");
+      return;
+    }
+
+    const encodedContent = encodeRichNote(noteForm.content);
+    if (encodedContent.length > MAX_NOTE_CONTENT_LENGTH) {
+      setPanelError(`This formatted note is too long. Shorten it until it is under ${MAX_NOTE_CONTENT_LENGTH.toLocaleString()} saved characters.`);
+      return;
+    }
 
     const notePayload = {
       title: noteForm.title.trim(),
-      content: noteForm.content.trim(),
+      content: encodedContent,
       category: noteForm.category,
       date: today,
     };
 
     if (isAppwriteConfigured && authUser) {
       try {
-        const created = await databases.createDocument(
-          APPWRITE_DATABASE_ID,
-          APPWRITE_NOTES_COLLECTION_ID,
-          ID.unique(),
-          {
-            userId: authUser.$id,
-            ...notePayload,
-          },
-        );
+        const saved = noteForm.id
+          ? await databases.updateDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_NOTES_COLLECTION_ID,
+              noteForm.id,
+              notePayload,
+            )
+          : await databases.createDocument(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_NOTES_COLLECTION_ID,
+              ID.unique(),
+              { userId: authUser.$id, ...notePayload },
+            );
 
-        setNotes((items) => [mapNoteDocument(created), ...items]);
+        const mapped = mapNoteDocument(saved);
+        setNotes((items) => noteForm.id
+          ? items.map((note) => note.id === noteForm.id ? mapped : note)
+          : [mapped, ...items]);
         closePanel();
         return;
       } catch (error) {
         console.error("Failed to save note to Appwrite:", error);
+        setPanelError("The note could not be saved. Check your connection and try again.");
+        return;
       }
     }
 
-    setNotes((items) => [{ id: createId(), ...notePayload }, ...items]);
+    setNotes((items) => noteForm.id
+      ? items.map((note) => note.id === noteForm.id ? { ...note, ...notePayload } : note)
+      : [{ id: createId(), ...notePayload }, ...items]);
     closePanel();
   }
 
@@ -2443,6 +3050,53 @@ export default function App() {
     } catch (error) {
       console.error("Failed to delete Appwrite note:", error);
     }
+  }
+
+  async function createCalendarEvent(eventInput) {
+    const eventPayload = {
+      title: String(eventInput.title || "").trim().slice(0, 200),
+      date: String(eventInput.date || "").slice(0, 10),
+      startTime: String(eventInput.startTime || "").slice(0, 5),
+      endTime: String(eventInput.endTime || "").slice(0, 5),
+      description: String(eventInput.description || "").trim().slice(0, 1000),
+      category: String(eventInput.category || "Study").slice(0, 40),
+    };
+
+    if (!eventPayload.title || !isValidCalendarDate(eventPayload.date)) {
+      throw new Error("Add an event title and a valid date.");
+    }
+    if (eventPayload.startTime && eventPayload.endTime && eventPayload.endTime <= eventPayload.startTime) {
+      throw new Error("End time must be later than start time.");
+    }
+
+    let savedEvent = { id: createId(), ...eventPayload };
+    if (isAppwriteConfigured && authUser && APPWRITE_CALENDAR_EVENTS_COLLECTION_ID) {
+      const created = await databases.createDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_CALENDAR_EVENTS_COLLECTION_ID,
+        ID.unique(),
+        { userId: authUser.$id, ...eventPayload },
+        [
+          Permission.read(Role.user(authUser.$id)),
+          Permission.update(Role.user(authUser.$id)),
+          Permission.delete(Role.user(authUser.$id)),
+        ],
+      );
+      savedEvent = mapCalendarEventDocument(created);
+    }
+    setCalendarEvents((items) => [...items, savedEvent]);
+    return savedEvent;
+  }
+
+  async function deleteCalendarEvent(id) {
+    if (isAppwriteConfigured && authUser && APPWRITE_CALENDAR_EVENTS_COLLECTION_ID) {
+      await databases.deleteDocument(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_CALENDAR_EVENTS_COLLECTION_ID,
+        id,
+      );
+    }
+    setCalendarEvents((items) => items.filter((item) => item.id !== id));
   }
 
   async function completeTodayReview() {
@@ -2593,17 +3247,20 @@ export default function App() {
           </nav>
         </div>
 
-        <div className="profile-card">
-          <div className="avatar">🦊</div>
+        <button
+          type="button"
+          className={`profile-card ${activePage === "profile" ? "active" : ""}`}
+          onClick={() => navigate("profile")}
+          aria-label="Open my profile"
+        >
+          <div className="avatar">{studentProfile.avatar}</div>
 
           <div>
             <strong>{userName}</strong>
 
-            <span>
-              <Flame size={13} />5 day streak
-            </span>
+            <span>{studentProfile.level || <><Flame size={13} />5 day streak</>}</span>
           </div>
-        </div>
+        </button>
 
         <button type="button" className="mobile-logout" onClick={logout}>
           <LogOut size={17} />
@@ -2648,6 +3305,16 @@ export default function App() {
         </header>
 
         <div className="content">
+          {/* PROFILE */}
+
+          {activePage === "profile" && (
+            <ProfilePage
+              profile={studentProfile}
+              email={authUser?.email || ""}
+              onSave={saveStudentProfile}
+            />
+          )}
+
           {/* DISCORD */}
 
           {activePage === "discord" && (
@@ -2680,6 +3347,14 @@ export default function App() {
               learningProgress={learningProgress}
               navigate={navigate}
               toggleTask={toggleTask}
+            />
+          )}
+
+          {activePage === "ai-teacher" && authUser && (
+            <AiTeacher
+              key={authUser.$id}
+              userId={authUser.$id}
+              studyPlans={teacherStudyPlans}
             />
           )}
 
@@ -2716,7 +3391,7 @@ export default function App() {
                       }}
                     >
                       <Sparkles size={15} />
-                      AI STUDY COACH
+                      MAHEI ASSISTANCE
                     </div>
 
                     <h3
@@ -2835,7 +3510,7 @@ export default function App() {
                               letterSpacing: "0.05em",
                             }}
                           >
-                            Mahei AI Coach
+                            Mahei Assistance
                           </div>
 
                           <div
@@ -2846,7 +3521,7 @@ export default function App() {
                               color: "#40362f",
                             }}
                           >
-                            {aiReply}
+                            <AiResponse>{aiReply}</AiResponse>
                           </div>
                         </div>
                       </div>
@@ -2902,7 +3577,7 @@ export default function App() {
                     <button
                       type="button"
                       className="dark-button"
-                      onClick={handleGenerateStudyPlan}
+                      onClick={() => startStudyPlanInterview()}
                       disabled={studyPlanLoading}
                       style={{
                         display: "inline-flex",
@@ -2924,7 +3599,7 @@ export default function App() {
                 </div>
 
                 {/* Input Card */}
-                <div
+                {!planInterviewActive && <div
                   style={{
                     background: "#fff",
                     border: "1px solid #eadfd5",
@@ -3012,7 +3687,7 @@ export default function App() {
                       }}
                     >
                       <Sparkles size={16} />
-                      {aiLoading ? "Thinking..." : "Ask Coach"}
+                      {aiLoading ? "Thinking..." : "Ask Mahei"}
                     </button>
                   </div>
 
@@ -3040,9 +3715,10 @@ export default function App() {
                     >
                       {[
                         "What should I study today?",
-                        "Help me stop procrastinating",
-                        "Make a study plan",
-                        "Break my assignment into steps",
+                        "Create a task to revise maths today",
+                        "Add a calendar event for my exam tomorrow",
+                        "Open my AI Teacher lesson",
+                        "Prepare a focus session for algebra",
                       ].map((prompt) => (
                         <button
                           key={prompt}
@@ -3077,77 +3753,136 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                </div>
+                </div>}
 
                 {planInterviewActive && (
-                  <div
-                    style={{
-                      marginTop: "16px",
-                      padding: "18px",
-                      background: "#ffffff",
-                      border: "1px solid #e4d9cf",
-                      borderRadius: "16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        fontWeight: 700,
-                        color: "#9b6a4c",
-                        marginBottom: "8px",
-                      }}
-                    >
-                      QUESTION {planInterviewStep + 1} OF{" "}
-                      {planInterviewQuestions.length}
+                  <section className="plan-interview" aria-labelledby="plan-interview-question">
+                    <div className="plan-interview__topline">
+                      <span>
+                        Question {planInterviewStep + 1} of {STUDY_PLAN_QUESTIONS.length}
+                      </span>
+                      <span>{Math.round(((planInterviewStep + 1) / STUDY_PLAN_QUESTIONS.length) * 100)}% complete</span>
                     </div>
 
-                    <div
-                      style={{
-                        fontSize: "18px",
-                        fontWeight: 700,
-                        color: "#40362f",
-                        marginBottom: "14px",
-                      }}
-                    >
-                      {planInterviewQuestions[planInterviewStep]}
+                    <div className="plan-interview__progress" aria-hidden="true">
+                      <span
+                        style={{
+                          width: `${((planInterviewStep + 1) / STUDY_PLAN_QUESTIONS.length) * 100}%`,
+                        }}
+                      />
                     </div>
 
-                    <textarea
-                      value={planInterviewAnswer}
-                      onChange={(e) => setPlanInterviewAnswer(e.target.value)}
-                      placeholder="Type your answer..."
-                      rows={3}
-                      style={{
-                        width: "100%",
-                        padding: "12px",
-                        border: "1px solid #e4d9cf",
-                        borderRadius: "12px",
-                        resize: "vertical",
-                        fontSize: "14px",
-                        boxSizing: "border-box",
-                      }}
-                    />
+                    {planInterviewAnswers.length > 0 && (
+                      <div className="plan-interview__answers" aria-label="Your previous answers">
+                        {planInterviewAnswers.map((answer, index) => (
+                          <span key={STUDY_PLAN_QUESTIONS[index].key}>
+                            <Check size={13} aria-hidden="true" />
+                            {answer}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={handlePlanInterviewSubmit}
-                      style={{
-                        marginTop: "12px",
-                        border: "none",
-                        background: "#9b6a4c",
-                        color: "#ffffff",
-                        borderRadius: "10px",
-                        padding: "10px 16px",
-                        fontSize: "13px",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {planInterviewStep === planInterviewQuestions.length - 1
-                        ? "Create my study plan"
-                        : "Next"}
-                    </button>
-                  </div>
+                    <div className="plan-interview__card">
+                      <div className="plan-interview__assistant">
+                        <span className="plan-interview__assistant-icon">
+                          <Sparkles size={17} aria-hidden="true" />
+                        </span>
+                        <div>
+                          <span>Mahei asks</span>
+                          <h4 id="plan-interview-question">{currentPlanQuestionText}</h4>
+                        </div>
+                      </div>
+
+                      <div
+                        className="plan-interview__options"
+                        role="group"
+                        aria-label="Quick answer options"
+                      >
+                        {currentPlanOptions.map((option) => {
+                          const isSelected = planInterviewAnswer === option;
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              className={isSelected ? "is-selected" : ""}
+                              aria-pressed={isSelected}
+                              onClick={() => setPlanInterviewAnswer(option)}
+                              disabled={studyPlanLoading}
+                            >
+                              {isSelected && <Check size={15} aria-hidden="true" />}
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="plan-interview__divider"><span>or write your own answer</span></div>
+
+                      <label className="sr-only" htmlFor="plan-interview-answer">
+                        Your answer to: {currentPlanQuestionText}
+                      </label>
+                      <input
+                        id="plan-interview-answer"
+                        type="text"
+                        value={planInterviewAnswer}
+                        onChange={(event) => setPlanInterviewAnswer(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            handlePlanInterviewSubmit();
+                          }
+                        }}
+                        placeholder={currentPlanQuestion.placeholder}
+                        disabled={studyPlanLoading}
+                        autoFocus
+                      />
+
+                      {studyPlanError && (
+                        <div className="plan-interview__error" role="alert">
+                          {studyPlanError}
+                        </div>
+                      )}
+
+                      <div className="plan-interview__actions">
+                        <div>
+                          {planInterviewStep > 0 && (
+                            <button
+                              type="button"
+                              className="plan-interview__secondary"
+                              onClick={handlePlanInterviewBack}
+                              disabled={studyPlanLoading}
+                            >
+                              <ChevronLeft size={16} aria-hidden="true" />
+                              Back
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="plan-interview__cancel"
+                            onClick={cancelPlanInterview}
+                            disabled={studyPlanLoading}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="plan-interview__next"
+                          onClick={handlePlanInterviewSubmit}
+                          disabled={studyPlanLoading || !planInterviewAnswer.trim()}
+                        >
+                          {studyPlanLoading
+                            ? "Creating your plan..."
+                            : planInterviewStep === STUDY_PLAN_QUESTIONS.length - 1
+                              ? "Create my study plan"
+                              : "Next question"}
+                          {!studyPlanLoading && <ChevronRight size={16} aria-hidden="true" />}
+                        </button>
+                      </div>
+                    </div>
+                  </section>
                 )}
 
                 {/* Study Plan Result */}
@@ -3186,7 +3921,7 @@ export default function App() {
                           color: "#40362f",
                         }}
                       >
-                        {aiReply}
+                        <AiResponse>{aiReply}</AiResponse>
                       </div>
                     )}
 
@@ -3198,7 +3933,7 @@ export default function App() {
                         color: "#40362f",
                       }}
                     >
-                      {studyPlan}
+                      <AiResponse>{studyPlan}</AiResponse>
                     </div>
                     <div
                       style={{
@@ -3211,6 +3946,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleAddStudyPlanToTask}
+                        disabled={studyPlanTaskStatus === "saving" || studyPlanTaskStatus === "saved"}
                         style={{
                           border: "none",
                           background: "#9b6a4c",
@@ -3219,15 +3955,21 @@ export default function App() {
                           padding: "11px 16px",
                           fontSize: "13px",
                           fontWeight: 700,
-                          cursor: "pointer",
+                          cursor: studyPlanTaskStatus === "saving" || studyPlanTaskStatus === "saved" ? "default" : "pointer",
+                          opacity: studyPlanTaskStatus === "saving" ? 0.65 : 1,
                         }}
                       >
-                        Add today's plan to Tasks
+                        {studyPlanTaskStatus === "saving"
+                          ? "Adding to Tasks..."
+                          : studyPlanTaskStatus === "saved"
+                            ? "Added to Tasks ✓"
+                            : "Add today's plan to Tasks"}
                       </button>
 
                       <button
                         type="button"
-                        onClick={() => {}}
+                        onClick={handleCreateStudyGoal}
+                        disabled={studyPlanGoalStatus === "saving" || studyPlanGoalStatus === "saved"}
                         style={{
                           border: "1px solid #9b6a4c",
                           background: "#ffffff",
@@ -3236,10 +3978,35 @@ export default function App() {
                           padding: "11px 16px",
                           fontSize: "13px",
                           fontWeight: 700,
-                          cursor: "pointer",
+                          cursor: studyPlanGoalStatus === "saving" || studyPlanGoalStatus === "saved" ? "default" : "pointer",
+                          opacity: studyPlanGoalStatus === "saving" ? 0.65 : 1,
                         }}
                       >
-                        Create 7-day Goal
+                        {studyPlanGoalStatus === "saving"
+                          ? "Creating Goal..."
+                          : studyPlanGoalStatus === "saved"
+                            ? "7-day Goal Created ✓"
+                            : "Create 7-day Goal"}
+                      </button>
+                    </div>
+
+                    <div className={`study-plan-teacher-link ${studyPlanTaskStatus === "saved" ? "is-connected" : ""}`}>
+                      <div>
+                        <span>{studyPlanTaskStatus === "saved" ? "CONNECTED TO AI TEACHER" : "CONTINUE WITH AI TEACHER"}</span>
+                        <strong>{studyPlanContext?.subject || "This study plan"}{studyPlanContext?.topic ? ` · ${studyPlanContext.topic}` : ""}</strong>
+                        <p>
+                          {studyPlanTaskStatus === "saved"
+                            ? "The plan is saved. AI Teacher can now read it and teach each step."
+                            : "Add this plan to Tasks first, then AI Teacher can read it and continue the lesson."}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => navigate("ai-teacher")}
+                        disabled={studyPlanTaskStatus !== "saved"}
+                      >
+                        <GraduationCap size={16} />
+                        Open AI Teacher
                       </button>
                     </div>
                   </div>
@@ -3315,7 +4082,7 @@ export default function App() {
                         fontSize: "16px",
                       }}
                     >
-                      Your study coach is ready.
+                      Mahei Assistance is ready.
                     </h4>
 
                     <p
@@ -3370,7 +4137,7 @@ export default function App() {
             />
           )}
 
-          {panelType && (
+          {panelType && panelType !== "note" && (
             <CreatePanel
               type={panelType}
               taskForm={taskForm}
@@ -3444,7 +4211,14 @@ export default function App() {
           {/* CALENDAR */}
 
           {activePage === "calendar" && (
-            <CalendarPage tasks={tasks} assignments={assignments} />
+            <CalendarPage
+              tasks={tasks}
+              assignments={assignments}
+              calendarEvents={calendarEvents}
+              createCalendarEvent={createCalendarEvent}
+              deleteCalendarEvent={deleteCalendarEvent}
+              isCalendarStorageConfigured={Boolean(APPWRITE_CALENDAR_EVENTS_COLLECTION_ID)}
+            />
           )}
 
           {/* FOCUS */}
@@ -3471,10 +4245,30 @@ export default function App() {
           {/* NOTES */}
 
           {activePage === "notes" && (
-            <NotesPage
-              notes={notes}
-              addNote={addNote}
-              deleteNote={deleteNote}
+            panelType === "note" ? (
+              <NoteEditorPage
+                noteForm={noteForm}
+                setNoteForm={setNoteForm}
+                panelError={panelError}
+                onCancel={closePanel}
+                onSubmit={submitNote}
+              />
+            ) : (
+              <NotesPage
+                notes={notes}
+                addNote={addNote}
+                editNote={editNote}
+                deleteNote={deleteNote}
+              />
+            )
+          )}
+
+          {activePage === "notes-store" && authUser && (
+            <NotesStorePage
+              authUser={authUser}
+              userName={userName}
+              studentProfile={studentProfile}
+              isAdmin={isAdmin}
             />
           )}
 
@@ -4330,12 +5124,30 @@ function GoalsPage({ goals, addGoal, increaseGoal, deleteGoal }) {
    CALENDAR
 ========================================================= */
 
-function CalendarPage({ tasks, assignments }) {
+function CalendarPage({
+  tasks,
+  assignments,
+  calendarEvents,
+  createCalendarEvent,
+  deleteCalendarEvent,
+  isCalendarStorageConfigured,
+}) {
   const todayDate = new Date();
   const [viewDate, setViewDate] = useState(
     new Date(todayDate.getFullYear(), todayDate.getMonth(), 1),
   );
   const [selectedDate, setSelectedDate] = useState(today);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    title: "",
+    date: today,
+    startTime: "",
+    endTime: "",
+    category: "Study",
+    description: "",
+  });
+  const [eventFormError, setEventFormError] = useState("");
+  const [eventSaving, setEventSaving] = useState(false);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -4346,16 +5158,55 @@ function CalendarPage({ tasks, assignments }) {
 
   const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
 
-  const events = [...tasks, ...assignments];
+  const events = [
+    ...tasks.map((item) => ({ ...item, eventDate: item.deadline, eventType: "Task" })),
+    ...assignments.map((item) => ({ ...item, eventDate: item.dueDate, eventType: "Assignment" })),
+    ...calendarEvents.map((item) => ({ ...item, eventDate: item.date, eventType: "Event" })),
+  ];
 
   function getDateString(day) {
     return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
   function getEventsForDate(dateString) {
-    return events.filter(
-      (item) => item.deadline === dateString || item.dueDate === dateString,
-    );
+    return events.filter((item) => item.eventDate === dateString);
+  }
+
+  function selectDate(dateString) {
+    setSelectedDate(dateString);
+    if (showEventForm) {
+      setEventForm((current) => ({ ...current, date: dateString }));
+    }
+  }
+
+  function openEventForm() {
+    setEventForm({
+      title: "",
+      date: selectedDate,
+      startTime: "",
+      endTime: "",
+      category: "Study",
+      description: "",
+    });
+    setEventFormError("");
+    setShowEventForm(true);
+  }
+
+  async function submitEvent(event) {
+    event.preventDefault();
+    setEventFormError("");
+    setEventSaving(true);
+    try {
+      await createCalendarEvent(eventForm);
+      setSelectedDate(eventForm.date);
+      const savedDate = new Date(`${eventForm.date}T00:00:00`);
+      setViewDate(new Date(savedDate.getFullYear(), savedDate.getMonth(), 1));
+      setShowEventForm(false);
+    } catch (error) {
+      setEventFormError(error.message || "The event could not be saved.");
+    } finally {
+      setEventSaving(false);
+    }
   }
 
   function changeMonth(offset) {
@@ -4428,7 +5279,7 @@ function CalendarPage({ tasks, assignments }) {
               <button
                 className={`calendar-day ${isToday ? "today" : ""} ${isSelected ? "selected" : ""}`}
                 key={day}
-                onClick={() => setSelectedDate(dateString)}
+                onClick={() => selectDate(dateString)}
                 aria-label={`${dateString}${dayEvents.length ? `, ${dayEvents.length} events` : ""}`}
               >
                 <span>{day}</span>
@@ -4441,15 +5292,20 @@ function CalendarPage({ tasks, assignments }) {
 
         <div className="selected-day-events">
           <div className="selected-day-heading">
-            <strong>{formatDate(selectedDate)}</strong>
-            <span>
-              {selectedEvents.length}{" "}
-              {selectedEvents.length === 1 ? "event" : "events"}
-            </span>
+            <div>
+              <strong>{formatDate(selectedDate)}</strong>
+              <span>
+                {selectedEvents.length}{" "}
+                {selectedEvents.length === 1 ? "item" : "items"}
+              </span>
+            </div>
+            <button className="small-button coral-button" type="button" onClick={openEventForm}>
+              <Plus size={15} /> Add event
+            </button>
           </div>
           {selectedEvents.length === 0 ? (
             <p className="calendar-no-events">
-              No tasks or assignments for this day.
+              Nothing is scheduled for this day. Add an event when you are ready.
             </p>
           ) : (
             selectedEvents.map((item) => (
@@ -4459,34 +5315,156 @@ function CalendarPage({ tasks, assignments }) {
               >
                 <span
                   className={
-                    item.deadline
+                    item.eventType === "Task"
                       ? "event-dot task-dot"
-                      : "event-dot assignment-dot"
+                      : item.eventType === "Assignment"
+                        ? "event-dot assignment-dot"
+                        : "event-dot calendar-dot"
                   }
                 />
-                <strong>{item.title}</strong>
-                <span>{item.deadline ? "Task" : "Assignment"}</span>
+                <div className="calendar-event-copy">
+                  <strong>{item.title}</strong>
+                  {item.eventType === "Event" && item.description && (
+                    <small>{item.description}</small>
+                  )}
+                </div>
+                <span>
+                  {item.eventType === "Event" && item.startTime
+                    ? `${item.startTime}${item.endTime ? `–${item.endTime}` : ""}`
+                    : item.eventType}
+                </span>
+                {item.eventType === "Event" && (
+                  <button
+                    type="button"
+                    className="calendar-event-delete"
+                    aria-label={`Delete ${item.title}`}
+                    title="Delete event"
+                    onClick={() => deleteCalendarEvent(item.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
               </div>
             ))
           )}
         </div>
       </div>
 
+      {showEventForm && (
+        <form className="card calendar-event-form" onSubmit={submitEvent}>
+          <div className="calendar-event-form-header">
+            <div>
+              <span className="section-label">New calendar event</span>
+              <h3>Add something to your schedule</h3>
+            </div>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Close event form"
+              onClick={() => setShowEventForm(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="calendar-event-fields">
+            <label className="field-group calendar-event-title">
+              <span>Event title</span>
+              <input
+                required
+                maxLength={200}
+                value={eventForm.title}
+                onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))}
+                placeholder="Example: Science revision"
+                autoFocus
+              />
+            </label>
+            <label className="field-group">
+              <span>Date</span>
+              <input
+                type="date"
+                required
+                value={eventForm.date}
+                onChange={(event) => setEventForm((current) => ({ ...current, date: event.target.value }))}
+              />
+            </label>
+            <label className="field-group">
+              <span>Starts (optional)</span>
+              <input
+                type="time"
+                value={eventForm.startTime}
+                onChange={(event) => setEventForm((current) => ({ ...current, startTime: event.target.value }))}
+              />
+            </label>
+            <label className="field-group">
+              <span>Ends (optional)</span>
+              <input
+                type="time"
+                value={eventForm.endTime}
+                onChange={(event) => setEventForm((current) => ({ ...current, endTime: event.target.value }))}
+              />
+            </label>
+            <label className="field-group">
+              <span>Category</span>
+              <select
+                value={eventForm.category}
+                onChange={(event) => setEventForm((current) => ({ ...current, category: event.target.value }))}
+              >
+                <option>Study</option>
+                <option>Exam</option>
+                <option>Deadline</option>
+                <option>Personal</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label className="field-group calendar-event-description">
+              <span>Details (optional)</span>
+              <textarea
+                maxLength={1000}
+                value={eventForm.description}
+                onChange={(event) => setEventForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What should you prepare or remember?"
+              />
+            </label>
+          </div>
+
+          {eventFormError && <p className="form-error">{eventFormError}</p>}
+          {!isCalendarStorageConfigured && (
+            <p className="calendar-storage-note">
+              Events are saved on this device until the Appwrite calendar-events collection is configured.
+            </p>
+          )}
+          <div className="calendar-event-form-actions">
+            <button type="button" className="secondary-button" onClick={() => setShowEventForm(false)}>
+              Cancel
+            </button>
+            <button className="primary-button orange" disabled={eventSaving}>
+              {eventSaving ? "Saving…" : "Save event"}
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="card">
         <SectionHeader title="Upcoming" icon="📌" color="blue" />
 
         <div className="item-list">
-          {events
+          {[...events]
             .filter((item) => {
-              const eventDate = item.deadline || item.dueDate;
-              return getDaysUntil(eventDate) !== null;
+              const days = getDaysUntil(item.eventDate);
+              return days !== null && days >= 0;
             })
+            .sort((a, b) => `${a.eventDate}${a.startTime || ""}`.localeCompare(`${b.eventDate}${b.startTime || ""}`))
             .slice(0, 8)
             .map((item) => (
-              <div className="upcoming-row" key={item.id}>
+              <div className="upcoming-row" key={`${item.eventType}-${item.id}`}>
                 <div>
                   <strong>{item.title}</strong>
-                  <span>{formatDate(item.deadline || item.dueDate)}</span>
+                  <span>
+                    {formatDate(item.eventDate)}
+                    {item.startTime ? ` · ${item.startTime}` : ""}
+                    {` · ${item.eventType}`}
+                  </span>
                 </div>
 
                 <ChevronRight size={17} />
@@ -4630,7 +5608,7 @@ function FocusPage({
    NOTES
 ========================================================= */
 
-function NotesPage({ notes, addNote, deleteNote }) {
+function NotesPage({ notes, addNote, editNote, deleteNote }) {
   return (
     <div className="page-stack">
       <PageIntro
@@ -4652,18 +5630,66 @@ function NotesPage({ notes, addNote, deleteNote }) {
 
             <h3>{note.title}</h3>
 
-            <p>{note.content}</p>
+            <NoteContent content={note.content} />
 
-            <button
-              className="delete-button"
-              onClick={() => deleteNote(note.id)}
-            >
-              <Trash2 size={17} />
-            </button>
+            <div className="note-card-actions">
+              <button className="note-edit-button" onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit note"><Pencil size={16} /> Edit</button>
+              <button className="delete-button" onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} title="Delete note"><Trash2 size={17} /></button>
+            </div>
           </div>
         ))}
       </div>
     </div>
+  );
+}
+
+function NoteEditorPage({ noteForm, setNoteForm, panelError, onCancel, onSubmit }) {
+  const editing = Boolean(noteForm.id);
+  return (
+    <section className="note-editor-page" aria-labelledby="note-editor-title">
+      <header className="note-editor-page-header">
+        <div>
+          <button type="button" className="note-editor-back" onClick={onCancel}><ChevronLeft size={18} /> Back to notes</button>
+          <span className="section-label">✨ MAHEI-PATHAP</span>
+          <h2 id="note-editor-title">{editing ? "Edit Note" : "Create a new note"}</h2>
+          <p>Write freely and format the important ideas as you study.</p>
+        </div>
+        <div className="note-editor-header-actions">
+          <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>
+          <button type="submit" form="note-editor-form" className="primary-button orange">{editing ? "Save changes" : "Save note"}</button>
+        </div>
+      </header>
+
+      <form id="note-editor-form" className="note-editor-form" onSubmit={onSubmit}>
+        <div className="note-editor-details">
+          <label className="field-group">
+            <span>Note title</span>
+            <input type="text" value={noteForm.title} onChange={(event) => setNoteForm({ ...noteForm, title: event.target.value })} placeholder="Study focus" required autoFocus />
+          </label>
+          <label className="field-group">
+            <span>Category</span>
+            <select value={noteForm.category} onChange={(event) => setNoteForm({ ...noteForm, category: event.target.value })}>
+              <option>Journal</option>
+              <option>Ideas</option>
+              <option>Reflection</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="field-group note-editor-writing-area">
+          <span>Write your note</span>
+          <Suspense fallback={<div className="rich-editor-loading">Opening editor…</div>}>
+            <RichTextEditor key={noteForm.id || "new-note"} value={noteForm.content} onChange={(content) => setNoteForm({ ...noteForm, content })} />
+          </Suspense>
+        </div>
+
+        {panelError && <p className="auth-error" role="alert">{panelError}</p>}
+        <div className="note-editor-mobile-actions">
+          <button type="button" className="secondary-button" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="primary-button orange">{editing ? "Save changes" : "Save note"}</button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -5203,7 +6229,7 @@ function CreatePanel({
           ? "Add YouTube Lesson"
           : isGoal
             ? "Add Goal"
-            : "Add Note";
+            : noteForm.id ? "Edit Note" : "Add Note";
 
   return (
     <div className="panel-overlay" onClick={onClose}>
@@ -5587,18 +6613,16 @@ function CreatePanel({
                 </select>
               </label>
 
-              <label className="field-group">
+              <div className="field-group">
                 <span>Write your note</span>
-                <textarea
-                  rows="6"
-                  value={noteForm.content}
-                  onChange={(event) =>
-                    setNoteForm({ ...noteForm, content: event.target.value })
-                  }
-                  placeholder="Write down your thoughts..."
-                  required
-                />
-              </label>
+                <Suspense fallback={<div className="rich-editor-loading">Opening editor…</div>}>
+                  <RichTextEditor
+                    key={noteForm.id || "new-note"}
+                    value={noteForm.content}
+                    onChange={(content) => setNoteForm({ ...noteForm, content })}
+                  />
+                </Suspense>
+              </div>
             </>
           )}
 
@@ -5613,7 +6637,7 @@ function CreatePanel({
               Cancel
             </button>
             <button type="submit" className="primary-button orange">
-              Save
+              {isNote ? (noteForm.id ? "Save changes" : "Save note") : "Save"}
             </button>
           </div>
         </form>
