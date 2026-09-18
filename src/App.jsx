@@ -5609,6 +5609,8 @@ function FocusPage({
 ========================================================= */
 
 function NotesPage({ notes, addNote, editNote, deleteNote }) {
+  const [viewingNote, setViewingNote] = useState(null);
+
   return (
     <div className="page-stack">
       <PageIntro
@@ -5622,7 +5624,20 @@ function NotesPage({ notes, addNote, editNote, deleteNote }) {
 
       <div className="two-column">
         {notes.map((note) => (
-          <div className="card note-card" key={note.id}>
+          <div
+            className="card note-card"
+            key={note.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setViewingNote(note)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setViewingNote(note);
+              }
+            }}
+            aria-label={`View ${note.title}`}
+          >
             <div className="note-top">
               <span className="tag mint">{note.category}</span>
               <span>{formatDate(note.date)}</span>
@@ -5633,11 +5648,61 @@ function NotesPage({ notes, addNote, editNote, deleteNote }) {
             <NoteContent content={note.content} />
 
             <div className="note-card-actions">
-              <button className="note-edit-button" onClick={() => editNote(note)} aria-label={`Edit ${note.title}`} title="Edit note"><Pencil size={16} /> Edit</button>
-              <button className="delete-button" onClick={() => deleteNote(note.id)} aria-label={`Delete ${note.title}`} title="Delete note"><Trash2 size={17} /></button>
+              <button className="note-edit-button" onClick={(event) => { event.stopPropagation(); editNote(note); }} aria-label={`Edit ${note.title}`} title="Edit note"><Pencil size={16} /> Edit</button>
+              <button className="delete-button" onClick={(event) => { event.stopPropagation(); deleteNote(note.id); }} aria-label={`Delete ${note.title}`} title="Delete note"><Trash2 size={17} /></button>
             </div>
           </div>
         ))}
+      </div>
+
+      {viewingNote && (
+        <NoteViewModal
+          note={viewingNote}
+          onClose={() => setViewingNote(null)}
+          onEdit={() => { setViewingNote(null); editNote(viewingNote); }}
+          onDelete={() => { setViewingNote(null); deleteNote(viewingNote.id); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NoteViewModal({ note, onClose, onEdit, onDelete }) {
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="note-view-backdrop" onClick={onClose}>
+      <div
+        className="note-view-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="note-view-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="note-view-header">
+          <div className="note-top">
+            <span className="tag mint">{note.category}</span>
+            <span>{formatDate(note.date)}</span>
+          </div>
+          <button className="note-view-close" onClick={onClose} aria-label="Close note"><X size={18} /></button>
+        </div>
+
+        <h2 id="note-view-title">{note.title}</h2>
+
+        <div className="note-view-body">
+          <NoteContent content={note.content} />
+        </div>
+
+        <div className="note-view-actions">
+          <button className="note-edit-button" onClick={onEdit}><Pencil size={16} /> Edit</button>
+          <button className="delete-button" onClick={onDelete}><Trash2 size={17} /> Delete</button>
+        </div>
       </div>
     </div>
   );
