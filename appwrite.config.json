@@ -1,108 +1,108 @@
 {
-  "projectId": "6a8413be0026f88b5dc8",
-  "functions": [
-    {
-      "$id": "mahei-ai-coach",
-      "name": "Mahei AI Coach",
-      "runtime": "node-26",
-      "path": "functions/mahei-ai-coach",
-      "entrypoint": "src/main.js",
-      "execute": [
-        "users"
-      ],
-      "enabled": true,
-      "logging": true,
-      "events": [],
-      "schedule": "",
-      "timeout": 30,
-      "commands": "npm install",
-      "scopes": []
-    },
-    {
-      "$id": "mahei-ai-agent",
-      "name": "Mahei AI Agent",
-      "runtime": "node-26",
-      "path": "functions/mahei-ai-agent",
-      "entrypoint": "src/main.js",
-      "execute": [
-        "users"
-      ],
-      "enabled": true,
-      "logging": true,
-      "events": [],
-      "schedule": "",
-      "timeout": 30,
-      "commands": "npm install",
-      "scopes": []
-    },
-    {
-      "$id": "mahei-ai-planner",
-      "name": "Mahei AI Planner",
-      "runtime": "node-26",
-      "path": "functions/mahei-ai-planner",
-      "entrypoint": "src/main.js",
-      "execute": [
-        "users"
-      ],
-      "enabled": true,
-      "logging": true,
-      "events": [],
-      "schedule": "",
-      "timeout": 30,
-      "commands": "npm install",
-      "scopes": [],
-      "installationId": "",
-      "providerRepositoryId": "",
-      "providerBranch": "",
-      "providerSilentMode": false,
-      "providerRootDirectory": "",
-      "providerBranches": [],
-      "providerPaths": [],
-      "buildSpecification": "s-2vcpu-2gb",
-      "runtimeSpecification": "s-0.5vcpu-512mb",
-      "deploymentRetention": 0
-    },
-    {
-      "$id": "mahei-ai-teacher",
-      "name": "Mahei AI Teacher",
-      "runtime": "node-22",
-      "path": "functions/mahei-ai-teacher",
-      "entrypoint": "src/main.js",
-      "execute": [
-        "users"
-      ],
-      "enabled": true,
-      "logging": true,
-      "events": [],
-      "schedule": "",
-      "timeout": 180,
-      "commands": "npm install",
-      "scopes": [
-        "documents.read",
-        "documents.write"
-      ]
-    },
-    {
-      "$id": "mahei-notes-store",
-      "name": "Mahei Notes Store",
-      "runtime": "node-26",
-      "path": "functions/mahei-notes-store",
-      "entrypoint": "src/main.js",
-      "execute": [
-        "users"
-      ],
-      "enabled": true,
-      "logging": true,
-      "events": [],
-      "schedule": "",
-      "timeout": 30,
-      "commands": "npm install",
-      "scopes": [
-        "documents.read",
-        "documents.write",
-        "files.read",
-        "files.write"
-      ]
-    }
-  ]
+    "projectId": "6a8413be0026f88b5dc8",
+    "functions": [
+        {
+            "$id": "mahei-ai-coach",
+            "name": "Mahei AI Coach",
+            "runtime": "node-26",
+            "path": "functions/mahei-ai-coach",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 30,
+            "commands": "npm install",
+            "scopes": []
+        },
+        {
+            "$id": "mahei-ai-agent",
+            "name": "Mahei AI Agent",
+            "runtime": "node-26",
+            "path": "functions/mahei-ai-agent",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 30,
+            "commands": "npm install",
+            "scopes": []
+        },
+        {
+            "$id": "mahei-ai-planner",
+            "name": "Mahei AI Planner",
+            "runtime": "node-26",
+            "path": "functions/mahei-ai-planner",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 30,
+            "commands": "npm install",
+            "scopes": [],
+            "installationId": "",
+            "providerRepositoryId": "",
+            "providerBranch": "",
+            "providerSilentMode": false,
+            "providerRootDirectory": "",
+            "providerBranches": [],
+            "providerPaths": [],
+            "buildSpecification": "s-2vcpu-2gb",
+            "runtimeSpecification": "s-0.5vcpu-512mb",
+            "deploymentRetention": 0
+        },
+        {
+            "$id": "6aabcb0d002e4ba0de25",
+            "name": "Mahei AI Teacher",
+            "runtime": "node-26",
+            "path": "functions/mahei-ai-teacher",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 180,
+            "commands": "npm install",
+            "scopes": [
+                "documents.read",
+                "documents.write"
+            ]
+        },
+        {
+            "$id": "mahei-notes-store",
+            "name": "Mahei Notes Store",
+            "runtime": "node-26",
+            "path": "functions/mahei-notes-store",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 30,
+            "commands": "npm install",
+            "scopes": [
+                "documents.read",
+                "documents.write",
+                "files.read",
+                "files.write"
+            ]
+        }
+    ]
 }
