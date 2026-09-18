@@ -1,4 +1,4 @@
-import { Account, Client, Databases, Functions, Teams, Query } from "appwrite";
+import { Account, Client, Databases, Functions, Storage, Teams, Query } from "appwrite";
 
 const endpoint =
   import.meta.env.VITE_APPWRITE_ENDPOINT ||
@@ -28,6 +28,9 @@ const focusCollectionId =
 const notesCollectionId =
   import.meta.env.VITE_APPWRITE_NOTES_COLLECTION_ID || "";
 
+const calendarEventsCollectionId =
+  import.meta.env.VITE_APPWRITE_CALENDAR_EVENTS_COLLECTION_ID || "";
+
 const suggestionsCollectionId =
   import.meta.env.VITE_APPWRITE_SUGGESTIONS_COLLECTION_ID || "";
 
@@ -45,6 +48,10 @@ const announcementDismissalsCollectionId =
 
 const discordIntegrationFunctionId =
   import.meta.env.VITE_APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID || "";
+const notesStoreCollectionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_COLLECTION_ID || "";
+const notesStorePurchasesCollectionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_PURCHASES_COLLECTION_ID || "";
+const notesStoreBucketId = import.meta.env.VITE_APPWRITE_NOTES_STORE_BUCKET_ID || "";
+const notesStoreFunctionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_FUNCTION_ID || "";
 
 
 /* =========================================================
@@ -69,6 +76,7 @@ export const databases = new Databases(client);
 export const teams = new Teams(client);
 
 export const functions = new Functions(client);
+export const storage = new Storage(client);
 
 
 /* =========================================================
@@ -95,6 +103,9 @@ export const APPWRITE_FOCUS_COLLECTION_ID =
 export const APPWRITE_NOTES_COLLECTION_ID =
   notesCollectionId;
 
+export const APPWRITE_CALENDAR_EVENTS_COLLECTION_ID =
+  calendarEventsCollectionId;
+
 export const APPWRITE_SUGGESTIONS_COLLECTION_ID =
   suggestionsCollectionId;
 
@@ -112,6 +123,9 @@ export const APPWRITE_ANNOUNCEMENT_DISMISSALS_COLLECTION_ID =
 
 export const APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID =
   discordIntegrationFunctionId;
+export const APPWRITE_NOTES_STORE_COLLECTION_ID = notesStoreCollectionId;
+export const APPWRITE_NOTES_STORE_PURCHASES_COLLECTION_ID = notesStorePurchasesCollectionId;
+export const APPWRITE_NOTES_STORE_BUCKET_ID = notesStoreBucketId;
 
 
 /* =========================================================
@@ -179,6 +193,14 @@ account.listMemberships = async () => {
 
 export { Query };
 
+export async function notesStoreRequest(payload) {
+  if (!notesStoreFunctionId) throw new Error("Notes Store payments are not configured.");
+  const execution = await functions.createExecution(notesStoreFunctionId, JSON.stringify(payload), false, "/", "POST", { "Content-Type": "application/json" });
+  const response = JSON.parse(execution.responseBody || "{}");
+  if (!response.success) throw new Error(response.error || "Notes Store request failed.");
+  return response;
+}
+
 
 
 
@@ -186,7 +208,7 @@ export async function askAiCoach(message, context = {}) {
   const functionId = import.meta.env.VITE_APPWRITE_AI_COACH_FUNCTION_ID;
 
   if (!functionId) {
-    throw new Error("AI Coach function ID is not configured.");
+    throw new Error("Mahei Assistance function ID is not configured.");
   }
 
   const execution = await functions.createExecution(
@@ -203,7 +225,7 @@ export async function askAiCoach(message, context = {}) {
   const response = JSON.parse(execution.responseBody || "{}");
 
   if (!response.success) {
-    throw new Error(response.error || "AI Coach request failed.");
+    throw new Error(response.error || "Mahei Assistance request failed.");
   }
 
   return response.reply;
@@ -262,4 +284,26 @@ export async function generateAiAgentAction(message, context = {}) {
   }
 
   return response;
+}
+export async function teacherRequest(payload) {
+  const functionId = import.meta.env.VITE_APPWRITE_AI_TEACHER_FUNCTION_ID;
+  if (!functionId) throw new Error('AI Teacher is not connected yet. Add VITE_APPWRITE_AI_TEACHER_FUNCTION_ID and follow AI_TEACHER_SETUP.md.');
+  const execution = await functions.createExecution(functionId, JSON.stringify(payload), false, '/', 'POST', { 'Content-Type': 'application/json' });
+  let response;
+  try { response = JSON.parse(execution.responseBody || '{}'); }
+  catch { throw new Error('AI Teacher returned an unreadable response. Please retry.'); }
+  if (!response.success) throw new Error(response.error || 'AI Teacher could not complete this request. Please retry.');
+  return {
+    ...(response.state || {
+      profile: null,
+      quiz: null,
+      roadmap: [],
+      currentTopicId: null,
+      messages: [],
+      results: [],
+      revision: 0,
+    }),
+    sessions: response.sessions || [],
+    activeSessionId: response.activeSessionId || null,
+  };
 }

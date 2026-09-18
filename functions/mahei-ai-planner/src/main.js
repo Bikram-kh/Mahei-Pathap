@@ -50,6 +50,7 @@ The interview answers must drive the entire study plan.
 
 The interview may contain:
 - Subject
+- Class or learning level
 - Topic or chapter
 - Learning goal
 - Available study time
@@ -60,6 +61,7 @@ Use these answers to determine:
 - What the student should study
 - Which concepts should be covered
 - The correct learning order
+- The vocabulary and difficulty appropriate for the student's class or learning level
 - How much time each activity should receive
 - How difficult or simple each activity should be
 
