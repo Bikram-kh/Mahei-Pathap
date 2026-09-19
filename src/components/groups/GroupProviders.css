@@ -1,0 +1,15 @@
+.group-provider-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.group-provider-heading h3 { margin:0; }
+.group-video-session, .group-collaborative-note { border:1px solid #e8d8ca; border-radius:16px; padding:18px; margin:16px 0; min-width:0; }
+.group-provider-error { color:#a22f20; background:#fff0eb; padding:12px; border-radius:8px; }
+.group-call-preview { border-radius:12px; padding:16px; }
+.group-livekit-room { height:600px; max-height:75dvh; min-height:380px; border-radius:12px; overflow:hidden; }
+.group-end-call { margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.group-collaboration-status { font-size:13px; color:#766557; margin:10px 0; }
+.group-collaborators { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.group-collaborators span { background:#f8ecde; border-radius:20px; padding:4px 10px; font-size:12px; }
+.group-collaborative-note .tiptap { min-height:320px; }
+.group-collaborative-note .rich-editor-toolbar { display:flex; flex-wrap:nowrap; overflow-x:auto; align-items:center; padding:8px; gap:4px; }
+.group-collaborative-note .rich-editor-toolbar select { width:145px; flex:0 0 145px; height:38px; padding:6px 10px; }
+.group-collaborative-note .rich-editor-toolbar button { flex:0 0 auto; }
+@media(max-width:600px) { .group-video-session,.group-collaborative-note {padding:10px;} .group-livekit-room {height:65dvh;} }

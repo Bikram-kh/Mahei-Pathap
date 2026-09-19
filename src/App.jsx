@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   Pencil,
   ShoppingBag,
+  Users,
 } from "lucide-react";
 
 import {
@@ -82,6 +83,8 @@ import NoteContent from "./components/NoteContent";
 import ProfilePage from "./components/ProfilePage";
 import NotesStorePage from "./components/NotesStorePage";
 import LeaderboardPage from "./components/LeaderboardPage";
+import { captureGroupInvitation, clearGroupInvitation } from "./lib/groupInvitation";
+const StudyGroupsPage = lazy(() => import("./components/StudyGroupsPage"));
 import {
   createStudentProfile,
   normalizeStudentProfile,
@@ -551,7 +554,8 @@ export default function App() {
   // Get reCAPTCHA hook for bot protection
   const { executeRecaptcha } = useGoogleReCaptcha() || {};
 
-  const [activePage, setActivePage] = useState("dashboard");
+  const [groupInvitation, setGroupInvitation] = useState(() => captureGroupInvitation(window.location.href, window.sessionStorage));
+  const [activePage, setActivePage] = useState(() => captureGroupInvitation(window.location.href, window.sessionStorage) ? "study-groups" : "dashboard");
   const [mobileMenu, setMobileMenu] = useState(false);
   const [panelType, setPanelType] = useState(null);
   const [taskForm, setTaskForm] = useState(createTaskDraft());
@@ -2114,6 +2118,7 @@ export default function App() {
       icon: BookMarked,
       color: "mint",
     },
+    { id: "study-groups", label: "Study Groups", icon: Users, color: "mint" },
     {
       id: "notes-store",
       label: "Notes Store",
@@ -2167,6 +2172,14 @@ export default function App() {
         ]
       : []),
   ];
+
+  function finishGroupInvitation() {
+    clearGroupInvitation(window.sessionStorage);
+    setGroupInvitation("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("groupInvite");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
 
   function navigate(page) {
     setActivePage(page);
@@ -3056,6 +3069,7 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <LoginPage
+        pendingGroupInvitation={Boolean(groupInvitation)}
         authMode={authMode}
         setAuthMode={setAuthMode}
         authForm={authForm}
@@ -4139,6 +4153,12 @@ export default function App() {
               onSetAnonymous={setLeaderboardAnonymous}
               onStartFocus={() => navigate("focus")}
             />
+          )}
+
+          {activePage === "study-groups" && (
+            authUser ? <Suspense fallback={<div className="card" role="status">Opening study groups…</div>}>
+              <StudyGroupsPage user={authUser} personalNotes={notes} invitationToken={groupInvitation} onInvitationHandled={finishGroupInvitation} />
+            </Suspense> : <div className="card">Sign in to create or join a private study group.</div>
           )}
 
           {activePage === "notes-store" && authUser && (
@@ -5807,6 +5827,7 @@ function EmptyState({ text }) {
 }
 
 function LoginPage({
+  pendingGroupInvitation = false,
   authMode,
   setAuthMode,
   authForm,
@@ -5831,6 +5852,8 @@ function LoginPage({
             <p>Your study companion</p>
           </div>
         </div>
+
+        {pendingGroupInvitation && <p className="auth-hint" role="status">Your study group invitation is saved. Sign in or create an account to review it and choose whether to join.</p>}
 
         <div className="auth-toggle">
           <button

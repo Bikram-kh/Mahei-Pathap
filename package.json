@@ -11,6 +11,11 @@
     "setup:calendar": "node scripts/setup-calendar-events.mjs"
   },
   "dependencies": {
+    "@liveblocks/client": "^3.24.1",
+    "@liveblocks/react": "^3.24.1",
+    "@liveblocks/react-tiptap": "^3.24.1",
+    "@livekit/components-react": "^2.9.24",
+    "@livekit/components-styles": "^1.2.0",
     "@tiptap/extension-character-count": "^3.31.3",
     "@tiptap/extension-highlight": "^3.31.3",
     "@tiptap/extension-link": "^3.31.3",
@@ -20,6 +25,7 @@
     "@tiptap/starter-kit": "^3.31.3",
     "appwrite": "^15.0.0",
     "dompurify": "^3.4.15",
+    "livekit-client": "^2.22.3",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
