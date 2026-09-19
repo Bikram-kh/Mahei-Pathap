@@ -115,3 +115,11 @@ For a fresh subject during the pilot, an administrator may back up and remove th
 The function accepts POST requests with `action`: `load`, `setup`, `chat`, `quiz`, or `grade`. Mutations include `requestId` and `revision`. Setup sends `profile`; chat sends `message`; grading sends `quizId` and a zero-based `answers` array. Responses contain `{ success, state }`, or `{ success: false, error }` with an appropriate HTTP status. The user ID is derived from Appwrite's authenticated request headers, never from the request body.
 
 Reference documentation: [Appwrite function development](https://appwrite.io/docs/products/functions/develop), [Groq structured outputs](https://console.groq.com/docs/structured-outputs).
+
+## Roadmap XP
+
+Finishing every topic of a roadmap awards **20 XP once per subject session**. The XP is added to the same monthly `user_monthly_stats` row that focus sessions use, so it appears on the in-app Leaderboard.
+
+- No new variables or scopes are needed. The function uses its existing `documents.read` / `documents.write` scopes and the `TEACHER_DATABASE_ID` database. Optionally set `APPWRITE_USER_MONTHLY_STATS_COLLECTION_ID` if your stats collection is not called `user_monthly_stats`.
+- A private claim document (`rmxp…`) is created in the teacher collection before XP is added, so retries can never award the same roadmap twice.
+- If the XP write fails, the lesson still completes and the student is told the bonus could not be added.

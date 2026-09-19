@@ -128,3 +128,4 @@
 .teacher-workspace .teacher-conversation { overflow:hidden; }
 /* Keep visually hidden link labels inside their scrolling containing block. */
 .teacher-messages { position:relative; }
+.teacher-xp-note { margin:0 0 14px; padding:12px 14px; border-radius:12px; background:#fff8e6; color:#7a5200; font-size:13px; font-weight:700; }

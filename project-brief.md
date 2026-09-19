@@ -1,3 +1,5 @@
+> **Update:** The Discord integration described below has been removed. XP and the monthly leaderboard now live inside the web app; see `FOCUS_XP_SETUP.md`.
+
 PROJECT: MAHEI-PATHAP WEBAPP + DISCORD INTEGRATION
 
 GOAL
