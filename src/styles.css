@@ -3285,19 +3285,6 @@ select:focus-visible {
 .announcement-dismiss-btn:active {
   transform: scale(0.92);
 }
-/* Discord account linking */
-.discord-page { display: grid; gap: 18px; }
-.discord-connect-card { display: flex; gap: 18px; align-items: flex-start; padding: 22px; border-radius: 20px; background: var(--card-bg, #fff); border: 1px solid var(--border, rgba(0,0,0,.08)); box-shadow: 0 10px 30px rgba(0,0,0,.05); }
-.discord-connect-icon { width: 52px; height: 52px; min-width: 52px; border-radius: 16px; display: grid; place-items: center; background: rgba(124, 92, 255, .12); }
-.discord-connect-content { flex: 1; }
-.discord-connect-content h4 { margin: 0 0 7px; font-size: 18px; }
-.discord-connect-content p { margin: 0 0 14px; line-height: 1.6; opacity: .78; }
-.discord-link-code { display: inline-flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px 10px 16px; border-radius: 12px; border: 1px dashed currentColor; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; }
-.discord-link-code strong { font-size: 20px; }
-.discord-link-code button { border: 0; background: transparent; cursor: pointer; display: grid; place-items: center; }
-.discord-link-code small { opacity: .65; font-family: inherit; letter-spacing: normal; }
-.inline-error { padding: 12px 14px; border-radius: 12px; background: rgba(220, 38, 38, .08); color: #b91c1c; }
-@media (max-width: 640px) { .discord-connect-card { padding: 16px; } .discord-connect-icon { width: 44px; height: 44px; min-width: 44px; } }
 
 /* Guided study-plan interview */
 .sr-only {

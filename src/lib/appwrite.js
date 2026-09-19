@@ -46,8 +46,11 @@ const donationSettingsCollectionId =
 const announcementDismissalsCollectionId =
   import.meta.env.VITE_APPWRITE_ANNOUNCEMENT_DISMISSALS_COLLECTION_ID || "";
 
-const discordIntegrationFunctionId =
-  import.meta.env.VITE_APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID || "";
+// Runs trusted focus sessions, XP and the leaderboard. The old variable name is still accepted.
+const focusFunctionId =
+  import.meta.env.VITE_APPWRITE_FOCUS_FUNCTION_ID ||
+  import.meta.env.VITE_APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID ||
+  "";
 const notesStoreCollectionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_COLLECTION_ID || "";
 const notesStorePurchasesCollectionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_PURCHASES_COLLECTION_ID || "";
 const notesStoreBucketId = import.meta.env.VITE_APPWRITE_NOTES_STORE_BUCKET_ID || "";
@@ -121,8 +124,7 @@ export const APPWRITE_DONATION_SETTINGS_COLLECTION_ID =
 export const APPWRITE_ANNOUNCEMENT_DISMISSALS_COLLECTION_ID =
   announcementDismissalsCollectionId;
 
-export const APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID =
-  discordIntegrationFunctionId;
+export const APPWRITE_FOCUS_FUNCTION_ID = focusFunctionId;
 export const APPWRITE_NOTES_STORE_COLLECTION_ID = notesStoreCollectionId;
 export const APPWRITE_NOTES_STORE_PURCHASES_COLLECTION_ID = notesStorePurchasesCollectionId;
 export const APPWRITE_NOTES_STORE_BUCKET_ID = notesStoreBucketId;

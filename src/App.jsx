@@ -36,10 +36,6 @@ import {
   Heart,
   User,
   MessageSquare,
-  MessageCircle,
-  Link2,
-  Copy,
-  CheckCircle2,
   Megaphone,
   ShieldCheck,
   Pencil,
@@ -51,7 +47,7 @@ import {
   functions,
   APPWRITE_ASSIGNMENTS_COLLECTION_ID,
   APPWRITE_DATABASE_ID,
-  APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID,
+  APPWRITE_FOCUS_FUNCTION_ID,
   APPWRITE_FOCUS_COLLECTION_ID,
   APPWRITE_GOALS_COLLECTION_ID,
   APPWRITE_NOTES_COLLECTION_ID,
@@ -85,6 +81,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import NoteContent from "./components/NoteContent";
 import ProfilePage from "./components/ProfilePage";
 import NotesStorePage from "./components/NotesStorePage";
+import LeaderboardPage from "./components/LeaderboardPage";
 import {
   createStudentProfile,
   normalizeStudentProfile,
@@ -113,11 +110,6 @@ function getLocalDateString(date = new Date()) {
 const today = getLocalDateString();
 const USER_NAME_STORAGE_KEY = "mahei-pathap_user";
 const STUDENT_PROFILE_STORAGE_KEY = "mahei-pathap_student_profile";
-const DISCORD_INVITE_URL =
-  import.meta.env.VITE_DISCORD_INVITE_URL || "https://discord.gg/BmYmwRrheX";
-const DISCORD_LINK_FUNCTION_ENABLED = Boolean(
-  APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID,
-);
 
 const TOPIC_SUGGESTIONS = {
   mathematics: {
@@ -585,14 +577,6 @@ export default function App() {
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState(null);
-  const [discordLinkCode, setDiscordLinkCode] = useState("");
-  const [discordLinkExpiresAt, setDiscordLinkExpiresAt] = useState("");
-  const [discordLinkLoading, setDiscordLinkLoading] = useState(false);
-  const [discordLinkError, setDiscordLinkError] = useState("");
-  const [discordLinkCopied, setDiscordLinkCopied] = useState(false);
-  const [discordLinked, setDiscordLinked] = useState(false);
-  const [discordUsername, setDiscordUsername] = useState("");
-  const [discordLinkChecking, setDiscordLinkChecking] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [aiMessage, setAiMessage] = useState("");
   const [aiReply, setAiReply] = useState("");
@@ -685,7 +669,6 @@ export default function App() {
         "review",
         "suggestions",
         "announcements",
-        "discord",
         "about",
         "donation",
         ...(isAdmin ? ["admin"] : []),
@@ -1593,10 +1576,10 @@ export default function App() {
   }
 
   async function executeTrustedFocus(action, payload = {}) {
-    if (!APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID || !authUser) return null;
+    if (!APPWRITE_FOCUS_FUNCTION_ID || !authUser) return null;
 
     const execution = await functions.createExecution(
-      APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID,
+      APPWRITE_FOCUS_FUNCTION_ID,
       JSON.stringify({ action, ...payload }),
       false,
       "/",
@@ -1618,6 +1601,15 @@ export default function App() {
     }
 
     return body;
+  }
+
+  async function setLeaderboardAnonymous(anonymous) {
+    const currentUser = await account.get();
+    await account.updatePrefs({
+      ...(currentUser.prefs || {}),
+      leaderboardAnonymous: anonymous,
+    });
+    setAuthUser(await account.get());
   }
 
   async function handleAuthSubmit(event) {
@@ -1928,7 +1920,7 @@ export default function App() {
       setFocusStatus("Verifying your focus session…");
 
       try {
-        if (APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID && authUser) {
+        if (APPWRITE_FOCUS_FUNCTION_ID && authUser) {
           const result = await executeTrustedFocus("complete_focus", {
             sessionId: trustedFocusSessionId,
           });
@@ -1982,7 +1974,7 @@ export default function App() {
     setFocusStatus("");
     if (
       timerMode === "work" &&
-      APPWRITE_DISCORD_INTEGRATION_FUNCTION_ID &&
+      APPWRITE_FOCUS_FUNCTION_ID &&
       authUser
     ) {
       setFocusActionBusy(true);
@@ -2055,105 +2047,6 @@ export default function App() {
 
   const productivity =
     tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
-  async function checkDiscordLinkStatus() {
-    if (!authUser || !DISCORD_LINK_FUNCTION_ENABLED) {
-      return false;
-    }
-
-    try {
-      setDiscordLinkChecking(true);
-
-      const result = await executeTrustedFocus("check_discord_link");
-
-      if (result?.linked) {
-        setDiscordLinked(true);
-        setDiscordUsername(result.discordUsername || "");
-
-        return true;
-      }
-
-      setDiscordLinked(false);
-      setDiscordUsername("");
-
-      return false;
-    } catch (error) {
-      console.error("Failed to check Discord link status:", error);
-
-      return false;
-    } finally {
-      setDiscordLinkChecking(false);
-    }
-  }
-
-  async function createDiscordLinkCode() {
-    setDiscordLinkError("");
-    setDiscordLinkCopied(false);
-
-    if (!authUser || !DISCORD_LINK_FUNCTION_ENABLED) {
-      setDiscordLinkError("Discord account linking is not configured yet.");
-      return;
-    }
-
-    setDiscordLinkLoading(true);
-    try {
-      const result = await executeTrustedFocus("create_discord_link");
-      setDiscordLinkCode(result.code || "");
-      setDiscordLinkExpiresAt(result.expiresAt || "");
-    } catch (error) {
-      setDiscordLinkError(
-        error.message || "Unable to create a Discord link code.",
-      );
-    } finally {
-      setDiscordLinkLoading(false);
-    }
-  }
-  useEffect(() => {
-    if (
-      !authUser ||
-      !DISCORD_LINK_FUNCTION_ENABLED ||
-      activePage !== "discord"
-    ) {
-      return undefined;
-    }
-
-    let cancelled = false;
-    let intervalId = null;
-
-    const check = async () => {
-      if (cancelled || discordLinked) return;
-
-      const linked = await checkDiscordLinkStatus();
-
-      if (linked && intervalId) {
-        window.clearInterval(intervalId);
-        intervalId = null;
-      }
-    };
-
-    check();
-
-    intervalId = window.setInterval(check, 3000);
-
-    return () => {
-      cancelled = true;
-
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
-    };
-  }, [authUser?.$id, activePage, discordLinked]);
-
-  async function copyDiscordLinkCode() {
-    if (!discordLinkCode) return;
-    try {
-      await navigator.clipboard.writeText(discordLinkCode);
-      setDiscordLinkCopied(true);
-      window.setTimeout(() => setDiscordLinkCopied(false), 1800);
-    } catch {
-      setDiscordLinkError("Copy failed. Please copy the code manually.");
-    }
-  }
-
   /* =========================================================
      NAVIGATION
   ========================================================= */
@@ -2214,6 +2107,7 @@ export default function App() {
       icon: Clock3,
       color: "blue",
     },
+    { id: "leaderboard", label: "Leaderboard", icon: Trophy, color: "orange" },
     {
       id: "notes",
       label: "Notes",
@@ -2261,12 +2155,6 @@ export default function App() {
       label: "Announcements",
       icon: Megaphone,
       color: "blue",
-    },
-    {
-      id: "discord",
-      label: "Discord",
-      icon: MessageCircle,
-      color: "purple",
     },
     ...(isAdmin
       ? [
@@ -3315,24 +3203,6 @@ export default function App() {
             />
           )}
 
-          {/* DISCORD */}
-
-          {activePage === "discord" && (
-            <DiscordPage
-              inviteUrl={DISCORD_INVITE_URL}
-              linkCode={discordLinkCode}
-              expiresAt={discordLinkExpiresAt}
-              loading={discordLinkLoading}
-              error={discordLinkError}
-              copied={discordLinkCopied}
-              linked={discordLinked}
-              discordUsername={discordUsername}
-              checking={discordLinkChecking}
-              onCreateCode={createDiscordLinkCode}
-              onCopyCode={copyDiscordLinkCode}
-            />
-          )}
-
           {/* DASHBOARD */}
 
           {activePage === "dashboard" && (
@@ -4263,6 +4133,14 @@ export default function App() {
             )
           )}
 
+          {activePage === "leaderboard" && authUser && (
+            <LeaderboardPage
+              onLoad={(monthKey) => executeTrustedFocus("get_leaderboard", { monthKey })}
+              onSetAnonymous={setLeaderboardAnonymous}
+              onStartFocus={() => navigate("focus")}
+            />
+          )}
+
           {activePage === "notes-store" && authUser && (
             <NotesStorePage
               authUser={authUser}
@@ -4309,156 +4187,6 @@ export default function App() {
 /* =========================================================
    DASHBOARD
 ========================================================= */
-
-function DiscordPage({
-  inviteUrl,
-  linkCode,
-  expiresAt,
-  loading,
-  error,
-  copied,
-  linked,
-  discordUsername,
-  checking,
-  onCreateCode,
-  onCopyCode,
-}) {
-  return (
-    <section className="page-section discord-page">
-      <div className="page-heading">
-        <div>
-          <span className="section-kicker">COMMUNITY</span>
-
-          <h3>{linked ? "Discord Connected" : "Connect your Discord"}</h3>
-
-          <p>
-            {linked
-              ? "Your Mahei-Pathap account is connected to your Discord account."
-              : "Link your Mahei-Pathap account with your Discord account so your study activity can be connected later."}
-          </p>
-        </div>
-        <MessageCircle size={32} />
-      </div>
-      {linked && (
-        <div className="discord-connect-card">
-          <div className="discord-connect-icon">
-            <ShieldCheck size={28} />
-          </div>
-
-          <div className="discord-connect-content">
-            <h4>Discord account successfully linked</h4>
-
-            <p>
-              {discordUsername ? (
-                <>
-                  Connected as <strong>{discordUsername}</strong>.
-                </>
-              ) : (
-                "Your Discord account is connected to your Mahei-Pathap account."
-              )}
-            </p>
-
-            <a
-              className="dark-button"
-              href={inviteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <MessageCircle size={16} /> Open Discord
-            </a>
-          </div>
-        </div>
-      )}
-      {!linked && (
-        <>
-          <div className="discord-connect-card">
-            <div className="discord-connect-icon">
-              <Link2 size={28} />
-            </div>
-            <div className="discord-connect-content">
-              <h4>1. Join the Mahei-Pathap Discord</h4>
-              <p>
-                Join the server first, then use the one-time code below to link
-                the two accounts.
-              </p>
-              <a
-                className="dark-button"
-                href={inviteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <MessageCircle size={16} /> Join Discord
-              </a>
-            </div>
-          </div>
-
-          <div className="discord-connect-card">
-            <div className="discord-connect-icon">
-              <Link2 size={28} />
-            </div>
-            <div className="discord-connect-content">
-              <h4>2. Generate your linking code</h4>
-              <p>
-                Generate a short-lived code while signed in to Mahei-Pathap.
-                Never share this code with anyone.
-              </p>
-              <button
-                className="dark-button"
-                type="button"
-                onClick={onCreateCode}
-                disabled={loading}
-              >
-                <Link2 size={16} />{" "}
-                {loading
-                  ? "Generating…"
-                  : linkCode
-                    ? "Generate New Code"
-                    : "Generate Link Code"}
-              </button>
-
-              {linkCode && (
-                <div className="discord-link-code">
-                  <strong>{linkCode}</strong>
-                  <button
-                    type="button"
-                    onClick={onCopyCode}
-                    aria-label="Copy Discord link code"
-                  >
-                    {copied ? <CheckCircle2 size={18} /> : <Copy size={18} />}
-                  </button>
-                  {expiresAt && (
-                    <small>
-                      Expires{" "}
-                      {new Date(expiresAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </small>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="discord-connect-card">
-            <div className="discord-connect-icon">
-              <MessageCircle size={28} />
-            </div>
-            <div className="discord-connect-content">
-              <h4>3. Confirm inside Discord</h4>
-              <p>
-                In the Mahei-Pathap Discord server, run{" "}
-                <code>/link YOUR-CODE</code>. The bot will securely attach your
-                Discord ID to your Mahei-Pathap account.
-              </p>
-            </div>
-          </div>
-        </>
-      )}
-      {error && <div className="inline-error">{error}</div>}
-    </section>
-  );
-}
 
 function Dashboard({
   userName,
@@ -4508,6 +4236,11 @@ function Dashboard({
             <button className="glass-button" onClick={() => navigate("focus")}>
               <Play size={16} />
               Quick focus
+            </button>
+
+            <button className="glass-button" onClick={() => navigate("leaderboard")}>
+              <Trophy size={16} />
+              Leaderboard
             </button>
           </div>
         </div>

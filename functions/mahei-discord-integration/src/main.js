@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { getLeaderboard } from "./leaderboard.js";
 
 const FOCUS_DURATION_MINUTES = 25;
 const FOCUS_XP = 10;
@@ -48,13 +49,6 @@ function configured() {
     process.env.APPWRITE_FOCUS_SESSIONS_COLLECTION_ID,
     process.env.APPWRITE_USER_MONTHLY_STATS_COLLECTION_ID,
   ].every(Boolean);
-}
-
-function configuredDiscordLink() {
-  return Boolean(
-    process.env.APPWRITE_DISCORD_LINK_REQUESTS_COLLECTION_ID &&
-      process.env.APPWRITE_DISCORD_USERS_COLLECTION_ID
-  );
 }
 
 /* =========================================================
@@ -156,175 +150,27 @@ async function getRow(
   );
 }
 
-async function updateRow(
-  tableId,
-  rowId,
-  data,
-  dynamicKey,
-  transactionId = null
-) {
-  return request(
-    `${tableBase(tableId)}/rows/${encodeURIComponent(
-      rowId
-    )}`,
-    dynamicKey,
-    {
-      method: "PATCH",
+const PAGE_SIZE = 100;
+const MAX_LISTED_ROWS = 5000;
 
-      body: JSON.stringify({
-        data,
-
-        ...(transactionId
-          ? {
-              transactionId,
-            }
-          : {}),
-      }),
-    }
-  );
-}
-
-async function listRows(tableId, dynamicKey, limit = 100) {
+// Pagination queries only: the stats table has just a composite index, so filtering
+// by attribute in the API can fail with "Invalid query". Rows are filtered in code.
+async function listAllRows(tableId, dynamicKey) {
   const rows = [];
-  let offset = 0;
 
-  while (true) {
-    const page = await request(
-      `${tableBase(tableId)}/rows?limit=${limit}&offset=${offset}`,
-      dynamicKey
-    );
+  for (let offset = 0; offset < MAX_LISTED_ROWS; offset += PAGE_SIZE) {
+    const params = new URLSearchParams();
+    params.append("queries[]", JSON.stringify({ method: "limit", values: [PAGE_SIZE] }));
+    params.append("queries[]", JSON.stringify({ method: "offset", values: [offset] }));
 
-    const pageRows = Array.isArray(page.rows)
-      ? page.rows
-      : [];
+    const page = await request(`${tableBase(tableId)}/rows?${params}`, dynamicKey);
+    const batch = page.rows || [];
+    rows.push(...batch);
 
-    rows.push(...pageRows);
-
-    if (pageRows.length < limit) {
-      break;
-    }
-
-    offset += pageRows.length;
+    if (batch.length < PAGE_SIZE) break;
   }
 
   return rows;
-}
-
-/* =========================================================
-   DISCORD LINKING
-========================================================= */
-
-function hashLinkCode(code) {
-  return crypto
-    .createHash("sha256")
-    .update(code)
-    .digest("hex");
-}
-
-function generateLinkCode() {
-  return crypto
-    .randomBytes(4)
-    .toString("hex")
-    .toUpperCase();
-}
-
-async function createDiscordLink({
-  userId,
-  dynamicKey,
-}) {
-  if (!configuredDiscordLink()) {
-    throw new Error(
-      "Discord linking is not configured."
-    );
-  }
-
-  const code =
-    generateLinkCode();
-
-  const expiresAt =
-    new Date(
-      Date.now() + 10 * 60 * 1000
-    ).toISOString();
-
-  const created =
-    await createRow(
-      process.env
-        .APPWRITE_DISCORD_LINK_REQUESTS_COLLECTION_ID,
-
-      {
-        userId,
-
-        codeHash:
-          hashLinkCode(code),
-
-        expiresAt,
-
-        used: false,
-      },
-
-      dynamicKey
-    );
-
-  return {
-    code,
-
-    expiresAt,
-
-    requestId:
-      created.$id,
-  };
-}
-
-async function checkDiscordLink({
-  userId,
-  dynamicKey,
-}) {
-  if (!configuredDiscordLink()) {
-    throw new Error(
-      "Discord linking is not configured."
-    );
-  }
-
-  const discordUsersTable =
-    process.env
-      .APPWRITE_DISCORD_USERS_COLLECTION_ID;
-
-  const rows =
-    await listRows(
-      discordUsersTable,
-      dynamicKey
-    );
-
-  const linkedRow =
-    rows.find(
-      (row) =>
-        String(
-          row.appwrite_user_id || ""
-        ) ===
-        String(userId)
-    );
-
-  if (!linkedRow) {
-    return {
-      linked: false,
-    };
-  }
-
-  return {
-    linked: true,
-
-    discordUserId:
-      linkedRow.discord_user_id ||
-      "",
-
-    discordUsername:
-      linkedRow.discord_username ||
-      "",
-
-    linkedAt:
-      linkedRow.linked_at ||
-      "",
-  };
 }
 
 /* =========================================================
@@ -849,52 +695,6 @@ export default async ({
       req.bodyJson || {};
 
     /* =====================================================
-       DISCORD LINK
-    ===================================================== */
-
-    if (
-      body.action ===
-      "create_discord_link"
-    ) {
-      const result =
-        await createDiscordLink({
-          userId,
-          dynamicKey,
-        });
-
-      return json(
-        res,
-        {
-          ok: true,
-          ...result,
-        }
-      );
-    }
-
-    /* =====================================================
-       CHECK DISCORD LINK
-    ===================================================== */
-
-    if (
-      body.action ===
-      "check_discord_link"
-    ) {
-      const result =
-        await checkDiscordLink({
-          userId,
-          dynamicKey,
-        });
-
-      return json(
-        res,
-        {
-          ok: true,
-          ...result,
-        }
-      );
-    }
-
-    /* =====================================================
        START FOCUS
     ===================================================== */
 
@@ -946,6 +746,54 @@ export default async ({
       log(
         `Completed trusted focus session ${result.sessionId} for user ${userId}.`
       );
+
+      return json(
+        res,
+        {
+          ok: true,
+          ...result,
+        }
+      );
+    }
+
+    /* =====================================================
+       LEADERBOARD
+    ===================================================== */
+
+    if (
+      body.action ===
+      "get_leaderboard"
+    ) {
+      let userLookupFailureLogged = false;
+
+      const result =
+        await getLeaderboard({
+          userId,
+          monthKey:
+            body.monthKey,
+          listRows: () =>
+            listAllRows(
+              process.env
+                .APPWRITE_USER_MONTHLY_STATS_COLLECTION_ID,
+              dynamicKey
+            ),
+          getUser: async (id) => {
+            try {
+              return await request(
+                `/users/${encodeURIComponent(id)}`,
+                dynamicKey
+              );
+            } catch (lookupError) {
+              if (!userLookupFailureLogged) {
+                userLookupFailureLogged = true;
+                error(
+                  `Leaderboard could not read student names (does the function have the users.read scope?): ${lookupError.message}`
+                );
+              }
+              throw lookupError;
+            }
+          },
+        });
 
       return json(
         res,

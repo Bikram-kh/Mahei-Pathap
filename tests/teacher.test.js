@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../functions/mahei-ai-teacher/src/main.js';
 import { validateProfile, validateQuiz, validateRoadmap, gradeQuiz, publicState } from '../functions/mahei-ai-teacher/src/learning.js';
+import { ROADMAP_COMPLETION_XP, monthlyStatsRowId } from '../functions/mahei-ai-teacher/src/xp.js';
+import { createHash } from 'node:crypto';
 
 const profile = { level: 'Class 10', subject: 'Math', language: 'English', goal: 'Understand algebra', minutes: 25, syllabus: 'Linear equations, substitution and simple word problems.' };
 const quiz = { questions: Array.from({ length: 3 }, (_, i) => ({ prompt: `Solve x + ${i + 1} = ${i + 3}`, options: ['1', '2', '3', '4'], correctIndex: 1, explanation: 'Subtract the constant from both sides to get x = 2.' })) };
@@ -9,8 +11,10 @@ const roadmap = { topics: ['Linear equations', 'Substitution', 'Word problems'].
 function response(value, status = 200) { return { ok: status >= 200 && status < 300, status, json: async () => structuredClone(value) }; }
 function fixture({ replies = [], limit = '40', youtubeKey, videos = [] } = {}) {
   const docs = new Map();
+  const stats = new Map();
   const calls = [];
   let failSave = false;
+  let failStats = false;
   const fetcher = async (url, options = {}) => {
     const method = options.method || 'GET';
     const body = options.body ? JSON.parse(options.body) : null;
@@ -25,6 +29,14 @@ function fixture({ replies = [], limit = '40', youtubeKey, videos = [] } = {}) {
       const video = videos.shift();
       if (video instanceof Error) throw video;
       return response({ items: video ? [{ id: { videoId: video.id }, snippet: { title: video.title } }] : [] });
+    }
+    if (url.includes('/collections/user_monthly_stats/documents')) {
+      const rowId = method === 'POST' ? body.documentId : decodeURIComponent(url.split('/').at(-1));
+      if (failStats) return response({ message: 'stats unavailable' }, 500);
+      if (method === 'GET') return stats.has(rowId) ? response({ $id: rowId, ...stats.get(rowId) }) : response({ type: 'document_not_found' }, 404);
+      if (method === 'POST' && stats.has(rowId)) return response({}, 409);
+      stats.set(rowId, { ...(method === 'PATCH' ? stats.get(rowId) : {}), ...body.data });
+      return response({ $id: rowId, ...stats.get(rowId) });
     }
     const id = method === 'POST' ? body.documentId : decodeURIComponent(url.split('/').at(-1));
     if (method === 'GET') return docs.has(id) ? response({ state: docs.get(id) }) : response({ type: 'document_not_found' }, 404);
@@ -42,7 +54,7 @@ function fixture({ replies = [], limit = '40', youtubeKey, videos = [] } = {}) {
     await handler({ req: { method, headers: { ...(user ? { 'x-appwrite-user-id': user } : {}), 'x-appwrite-key': 'fake-dynamic' }, body: typeof body === 'string' ? body : { requestId: `request-${++number}`, ...body } }, res: { json: (data, status = 200) => { result = { status, ...data }; return result; } } });
     return result;
   };
-  return { docs, calls, replies, invoke, setFailSave: value => { failSave = value; } };
+  return { docs, stats, calls, replies, invoke, setFailSave: value => { failSave = value; }, setFailStats: value => { failStats = value; } };
 }
 async function setup(f) { f.replies.push(quiz, quiz); return f.invoke({ action: 'setup', profile }); }
 async function startLesson(f) {
@@ -243,4 +255,82 @@ test('missing collection is a configuration error, not an empty student profile'
   await handler({req:{method:'POST',headers:{'x-appwrite-user-id':'student-a','x-appwrite-key':'fake'},body:{action:'load'}},res:{json:(data,status)=>{result={...data,status};}}});
   assert.equal(result.status,503);
   assert.equal(result.success,false);
+});
+
+const monthKey = () => new Date().toISOString().slice(0, 7);
+const statsRowFor = f => f.stats.get(monthlyStatsRowId('student-a', monthKey()));
+// Passes every topic of the roadmap. With holdFinalGrade the last quiz is generated but not yet graded.
+async function finishRoadmap(f, { holdFinalGrade = false } = {}) {
+  let last = await startLesson(f);
+  let revision = 2;
+  const statsSizes = [];
+  const topicCount = last.state.roadmap.length;
+  for (let i = 0; i < topicCount; i += 1) {
+    f.replies.push(quiz, quiz);
+    const check = await f.invoke({ action: 'quiz', revision });
+    revision += 1;
+    if (holdFinalGrade && i === topicCount - 1) return { hold: { revision, quizId: check.state.quiz.id }, statsSizes };
+    last = await f.invoke({ action: 'grade', revision, quizId: check.state.quiz.id, answers: [1, 1, 1] });
+    revision += 1;
+    statsSizes.push(f.stats.size);
+  }
+  return { last, statsSizes };
+}
+const finalGrade = (f, hold) => f.invoke({ action: 'grade', revision: hold.revision, quizId: hold.quizId, answers: [1, 1, 1] });
+
+test('roadmap XP is worth 20 and shares the monthly stats row that focus XP uses', () => {
+  assert.equal(ROADMAP_COMPLETION_XP, 20);
+  const expected = 'month_' + createHash('sha256').update('student-a:2026-09').digest('hex').slice(0, 28);
+  assert.equal(monthlyStatsRowId('student-a', '2026-09'), expected);
+});
+test('completing the whole roadmap awards 20 XP once and records it on the saved progress', async () => {
+  const f = fixture();
+  const { last, statsSizes } = await finishRoadmap(f);
+  assert.deepEqual(statsSizes, [0, 0, 1]);
+  assert.equal(last.state.currentTopicId, null);
+  assert.equal(last.state.roadmapXp.status, 'awarded');
+  assert.equal(last.state.roadmapXp.points, 20);
+  const row = statsRowFor(f);
+  assert.equal(row.xp, 20);
+  assert.equal(row.appwrite_user_id, 'student-a');
+  assert.equal(row.month_key, monthKey());
+  assert.equal(row.focus_minutes, 0);
+  assert.equal(row.focus_sessions, 0);
+  assert.equal(typeof row.updated_at, 'string');
+  assert.equal((await f.invoke({ action: 'load' })).state.roadmapXp.points, 20);
+});
+test('roadmap XP is added to XP already earned from focus sessions this month', async () => {
+  const f = fixture();
+  f.stats.set(monthlyStatsRowId('student-a', monthKey()), { appwrite_user_id: 'student-a', month_key: monthKey(), xp: 30, focus_minutes: 75, focus_sessions: 3, updated_at: '2026-09-01T00:00:00.000Z' });
+  await finishRoadmap(f);
+  const row = statsRowFor(f);
+  assert.equal(row.xp, 50);
+  assert.equal(row.focus_minutes, 75);
+  assert.equal(row.focus_sessions, 3);
+});
+test('a retry after a failed save never awards the roadmap XP twice', async () => {
+  const f = fixture();
+  const { hold } = await finishRoadmap(f, { holdFinalGrade: true });
+  f.setFailSave(true);
+  assert.equal((await finalGrade(f, hold)).status, 503);
+  assert.equal(statsRowFor(f).xp, 20);
+  f.setFailSave(false);
+  const retried = await finalGrade(f, hold);
+  assert.equal(retried.status, 200);
+  assert.equal(retried.state.roadmapXp.status, 'already-awarded');
+  assert.equal(retried.state.roadmapXp.points, 0);
+  assert.equal(statsRowFor(f).xp, 20);
+});
+test('a failed XP write never blocks the lesson and leaves the award claimable', async () => {
+  const f = fixture();
+  const { hold } = await finishRoadmap(f, { holdFinalGrade: true });
+  f.setFailStats(true);
+  const result = await finalGrade(f, hold);
+  assert.equal(result.status, 200);
+  assert.equal(result.state.currentTopicId, null);
+  assert.ok(result.state.roadmap.every(topic => topic.status === 'complete'));
+  assert.equal(result.state.roadmapXp.status, 'failed');
+  assert.equal(result.state.roadmapXp.points, 0);
+  assert.equal(f.stats.size, 0);
+  assert.equal([...f.docs.keys()].some(id => id.startsWith('rmxp')), false);
 });
