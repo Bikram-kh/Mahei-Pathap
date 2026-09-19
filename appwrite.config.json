@@ -103,6 +103,31 @@
                 "files.read",
                 "files.write"
             ]
+        },
+        {
+            "$id": "mahei-study-groups",
+            "name": "Mahei Study Groups",
+            "runtime": "node-26",
+            "path": "functions/mahei-study-groups",
+            "entrypoint": "src/main.js",
+            "execute": [
+                "users"
+            ],
+            "enabled": true,
+            "logging": true,
+            "events": [],
+            "schedule": "",
+            "timeout": 60,
+            "commands": "npm ci --omit=dev",
+            "scopes": [
+                "users.read",
+                "teams.read",
+                "teams.write",
+                "documents.read",
+                "documents.write",
+                "files.read",
+                "files.write"
+            ]
         }
     ]
 }

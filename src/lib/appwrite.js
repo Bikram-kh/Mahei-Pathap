@@ -61,7 +61,7 @@ const notesStoreFunctionId = import.meta.env.VITE_APPWRITE_NOTES_STORE_FUNCTION_
    APPWRITE CLIENT
    ========================================================= */
 
-const client = new Client();
+export const client = new Client();
 
 client
   .setEndpoint(endpoint)
