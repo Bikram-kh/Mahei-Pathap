@@ -84,6 +84,7 @@ import ProfilePage from "./components/ProfilePage";
 import NotesStorePage from "./components/NotesStorePage";
 import LeaderboardPage from "./components/LeaderboardPage";
 import { captureGroupInvitation, clearGroupInvitation } from "./lib/groupInvitation";
+import useGroupChatNotifications from "./hooks/useGroupChatNotifications";
 const StudyGroupsPage = lazy(() => import("./components/StudyGroupsPage"));
 import {
   createStudentProfile,
@@ -581,7 +582,21 @@ export default function App() {
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState(null);
+  const [requestedGroupId, setRequestedGroupId] = useState("");
+  const [groupView, setGroupView] = useState({ groupId: "", tab: "" });
   const [isAdmin, setIsAdmin] = useState(false);
+  const groupChatNotifications = useGroupChatNotifications({
+    user: authUser,
+    activeGroupId:
+      activePage === "study-groups" && groupView.tab === "chat"
+        ? groupView.groupId
+        : "",
+    onOpenGroup: (groupId) => {
+      setRequestedGroupId(groupId);
+      setActivePage("study-groups");
+      setMobileMenu(false);
+    },
+  });
   const [aiMessage, setAiMessage] = useState("");
   const [aiReply, setAiReply] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -2118,7 +2133,13 @@ export default function App() {
       icon: BookMarked,
       color: "mint",
     },
-    { id: "study-groups", label: "Study Groups", icon: Users, color: "mint" },
+    {
+      id: "study-groups",
+      label: "Study Groups",
+      icon: Users,
+      color: "mint",
+      unread: groupChatNotifications.totalUnread,
+    },
     {
       id: "notes-store",
       label: "Notes Store",
@@ -3143,6 +3164,12 @@ export default function App() {
                 >
                   <Icon size={19} />
                   <span>{item.label}</span>
+                  {item.unread > 0 && (
+                    <span className="nav-unread-badge">
+                      <span aria-hidden="true">{item.unread > 99 ? "99+" : item.unread}</span>
+                      <span className="sr-only">{item.unread} unread group messages</span>
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -4157,7 +4184,20 @@ export default function App() {
 
           {activePage === "study-groups" && (
             authUser ? <Suspense fallback={<div className="card" role="status">Opening study groups…</div>}>
-              <StudyGroupsPage user={authUser} personalNotes={notes} invitationToken={groupInvitation} onInvitationHandled={finishGroupInvitation} />
+              <StudyGroupsPage
+                user={authUser}
+                personalNotes={notes}
+                invitationToken={groupInvitation}
+                onInvitationHandled={finishGroupInvitation}
+                openGroupId={requestedGroupId}
+                onGroupOpened={() => setRequestedGroupId("")}
+                onGroupViewChange={setGroupView}
+                onGroupsLoaded={groupChatNotifications.syncMemberships}
+                unreadByGroup={groupChatNotifications.unreadByGroup}
+                markGroupRead={groupChatNotifications.markGroupRead}
+                notificationPermission={groupChatNotifications.permission}
+                requestNotificationPermission={groupChatNotifications.requestPermission}
+              />
             </Suspense> : <div className="card">Sign in to create or join a private study group.</div>
           )}
 
