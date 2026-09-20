@@ -456,6 +456,22 @@ select:focus-visible {
   box-shadow: 0 7px 20px rgba(45, 36, 30, 0.13);
 }
 
+.nav-unread-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #d96728;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .profile-card {
   width: 100%;
   display: flex;
