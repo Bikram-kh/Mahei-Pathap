@@ -13,7 +13,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #d96728;
+  background: #ab4d2b;
   color: #fff;
   font-size: 11px;
   font-weight: 800;
@@ -33,6 +33,6 @@
 }
 
 .sg-notification-blocked {
-  background: #f4eee8;
-  color: #735f50;
+  background: #f4f0e8;
+  color: #5a6861;
 }

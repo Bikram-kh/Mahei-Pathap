@@ -1403,7 +1403,7 @@ export default function AdminDashboard() {
                 className="card"
                 style={{
                   padding: "20px",
-                  background: "#fffaf6",
+                  background: "#fdfbf8",
                 }}
               >
 
@@ -1715,7 +1715,7 @@ export default function AdminDashboard() {
                 className="card"
                 style={{
                   padding: "20px",
-                  background: "#fffaf6",
+                  background: "#fdfbf8",
                 }}
               >
 
@@ -1968,7 +1968,7 @@ export default function AdminDashboard() {
                 className="card"
                 style={{
                   padding: "20px",
-                  background: "#fffaf6",
+                  background: "#fdfbf8",
                 }}
               >
 
