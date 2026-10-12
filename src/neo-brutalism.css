@@ -1,0 +1,1580 @@
+/* =========================================================
+   NEO-BRUTALIST THEME
+   Loaded after styles.css and every component stylesheet.
+
+   1. Tokens   palette, border, shadow and spacing scales. The legacy
+               tokens in styles.css are re-pointed here, so every
+               component that already uses them follows the theme.
+   2. Rules    restyle each existing surface: thick ink borders, flat
+               colour, hard offset shadows, square corners.
+
+   Selectors are prefixed with `body` so they win over component CSS
+   regardless of load order (lazy chunks load later).
+   To switch the theme off, remove its import in main.jsx.
+========================================================= */
+
+/* ---------- 1. Tokens ---------- */
+
+:root {
+  /* Palette */
+  --nb-paper: #fff8ed; /* cream page background */
+  --nb-white: #ffffff; /* cards and fields */
+  --nb-ink: #191919; /* text, borders, shadows */
+  --nb-ink-soft: #4b4b4b; /* secondary text, 8:1 on paper */
+  --nb-purple: #7856ff; /* primary actions and key sections */
+  --nb-purple-ink: #5a3de6; /* purple used as text on light surfaces */
+  --nb-lilac: #e6e0ff; /* soft purple tint for selected fills */
+  --nb-lime: #d8f36a; /* highlights and supporting cards */
+  --nb-salmon: #ff927c; /* warm accent cards and alerts */
+  --nb-salmon-soft: #ffd9d0; /* error and warning fill */
+  --nb-sand: #efe8d8; /* neutral fill for hover and disabled */
+
+  /* Borders */
+  --nb-border: 3px solid var(--nb-ink);
+  --nb-border-thin: 2px solid var(--nb-ink);
+
+  /* Hard offset shadows */
+  --nb-shadow-sm: 3px 3px 0 var(--nb-ink);
+  --nb-shadow: 5px 5px 0 var(--nb-ink);
+  --nb-shadow-lg: 8px 8px 0 var(--nb-ink);
+
+  /* Spacing scale */
+  --nb-space-1: 4px;
+  --nb-space-2: 8px;
+  --nb-space-3: 12px;
+  --nb-space-4: 16px;
+  --nb-space-5: 24px;
+  --nb-space-6: 32px;
+  --nb-space-7: 48px;
+  --nb-space-8: 64px;
+
+  --font-display: Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  color: var(--nb-ink);
+  background: var(--nb-paper);
+
+  /* Legacy tokens, re-pointed so existing components follow the theme. */
+  --cream: var(--nb-paper);
+  --sand: var(--nb-sand);
+  --white: var(--nb-white);
+  --brown: var(--nb-ink);
+  --text: var(--nb-ink);
+  --muted: var(--nb-ink-soft);
+  --border: var(--nb-ink);
+  --border-strong: var(--nb-ink);
+  --primary: var(--nb-purple);
+  --primary-hover: #6a46f0;
+  --primary-tint: var(--nb-lilac);
+  --accent: var(--nb-salmon);
+  --accent-ink: #9b2f19; /* salmon family as text: 7:1 on paper */
+  --accent-tint: var(--nb-salmon-soft);
+  --shadow: var(--nb-shadow);
+  --radius-control: 0px;
+  --radius-card: 0px;
+
+  /* Category colours stay inside the palette. */
+  --orange: var(--nb-purple);
+  --coral: var(--nb-salmon);
+  --yellow: var(--nb-lime);
+  --purple: var(--nb-purple);
+  --blue: var(--nb-purple-ink);
+  --mint: var(--nb-lime);
+  --green: var(--nb-purple-ink);
+}
+
+/* ---------- 2. Base ---------- */
+
+body {
+  background: var(--nb-paper);
+  color: var(--nb-ink);
+  scrollbar-color: var(--nb-ink) var(--nb-paper);
+}
+
+body .lp,
+body .login-shell {
+  background: var(--nb-paper);
+}
+
+::selection {
+  background: var(--nb-lime);
+  color: var(--nb-ink);
+}
+
+/* Square corners everywhere; the few intentionally round things are restored below. */
+body *,
+body *::before,
+body *::after {
+  border-radius: 0 !important;
+}
+
+body :is(
+    .avatar,
+    .lp-avatar,
+    .lp-check,
+    .check-button,
+    .section-dot,
+    .event-dot,
+    .task-dot,
+    .assignment-dot,
+    .calendar-dot,
+    .calendar-day i,
+    .asst-dot,
+    .timer-circle,
+    .leaderboard-rank,
+    .teacher-step,
+    .nav-unread-badge,
+    .sg-unread-badge
+  ) {
+  border-radius: 50% !important;
+}
+
+/* Keyboard focus: ink ring on light surfaces, white ring on purple and ink. */
+body :is(button, input, textarea, select, a, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--nb-ink);
+  outline-offset: 3px;
+}
+
+body :is(.lp-groups, .lp-footer, .welcome-card, .lp-preview-focus, .stat-card:nth-child(4n)) :focus-visible {
+  outline-color: var(--nb-white);
+}
+
+/* ---------- Typography ---------- */
+
+body :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+body :is(
+    .topbar h2,
+    .page-intro h2,
+    .welcome-card h1,
+    .brand h1,
+    .note-editor-page-header h2,
+    .lp-hero h1,
+    .lp-section h2,
+    .lp-groups h2,
+    .lp-cta h2,
+    .lp-brand-name,
+    .lp-step-number,
+    .lp-preview-focus strong
+  ) {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+body :is(.section-title h3, .lp-feature h3, .lp-steps h3, .profile-form-heading h3) {
+  font-weight: 800;
+}
+
+body :is(.eyebrow, .section-label, .nav-group-label) {
+  color: var(--nb-ink);
+  font-weight: 800;
+}
+
+body a {
+  text-underline-offset: 3px;
+}
+
+/* ---------- Shell: sidebar, top bar, mobile bar ---------- */
+
+body .sidebar {
+  background: var(--nb-lime);
+  border-right: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .brand h1,
+body .brand p,
+body .nav-group-label {
+  color: var(--nb-ink);
+}
+
+body .brand p {
+  font-weight: 700;
+}
+
+/* The mark draws its own tile, border and shadow, so its wrapper stays plain. */
+body .brand-logo,
+body .lp-brand-mark {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: inherit;
+}
+
+body .nav-item {
+  border: var(--nb-border);
+  border-color: transparent;
+  color: var(--nb-ink);
+  font-weight: 700;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+body .nav-item:hover {
+  background: var(--nb-white);
+  border-color: var(--nb-ink);
+  box-shadow: var(--nb-shadow-sm);
+  color: var(--nb-ink);
+  transform: translate(-2px, -2px);
+}
+
+body .nav-item.active {
+  background: var(--nb-purple);
+  border-color: var(--nb-ink);
+  box-shadow: var(--nb-shadow-sm);
+  color: var(--nb-white);
+  font-weight: 800;
+}
+
+body .nav-unread-badge,
+body .sg-unread-badge {
+  background: var(--nb-salmon);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+}
+
+body .profile-card {
+  background: var(--nb-white);
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow-sm);
+  color: var(--nb-ink);
+}
+
+body .profile-card:hover,
+body .profile-card.active {
+  background: var(--nb-paper);
+  border-color: var(--nb-ink);
+  box-shadow: var(--nb-shadow);
+  transform: translate(-2px, -2px);
+}
+
+body .profile-card strong {
+  color: var(--nb-ink);
+}
+
+body .profile-card span {
+  color: var(--nb-ink-soft);
+}
+
+body .avatar,
+body .lp-avatar {
+  background: var(--nb-lilac);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .topbar {
+  background: var(--nb-paper);
+  backdrop-filter: none;
+  border-bottom: var(--nb-border);
+}
+
+body .mobile-header {
+  background: var(--nb-lime);
+  border-bottom: var(--nb-border);
+}
+
+body .bottom-tab-bar {
+  background: var(--nb-lime);
+  border-top: var(--nb-border);
+}
+
+body .bottom-tab-btn {
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body .bottom-tab-btn.active {
+  color: var(--nb-ink);
+  font-weight: 800;
+}
+
+body .bottom-tab-btn.active svg {
+  background: var(--nb-purple);
+  border: var(--nb-border-thin);
+  color: var(--nb-white);
+}
+
+/* ---------- Buttons ---------- */
+
+body :is(
+    .dark-button,
+    .primary-button,
+    .white-button,
+    .glass-button,
+    .small-button,
+    .secondary-button,
+    .reset-button,
+    .coral-button,
+    .purple-button,
+    .yellow-button,
+    .google-button,
+    .copy-upi-button,
+    .donate-upi-button,
+    .watch-button,
+    .note-edit-button,
+    .amount-button,
+    .teacher-danger-button,
+    .announcement-dismiss-btn,
+    .asst-send,
+    .lp-btn
+  ) {
+  min-height: 44px;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow);
+  color: var(--nb-ink);
+  font-weight: 700;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+}
+
+body :is(
+    .dark-button,
+    .primary-button,
+    .white-button,
+    .glass-button,
+    .small-button,
+    .secondary-button,
+    .reset-button,
+    .coral-button,
+    .purple-button,
+    .yellow-button,
+    .google-button,
+    .copy-upi-button,
+    .donate-upi-button,
+    .watch-button,
+    .note-edit-button,
+    .amount-button,
+    .teacher-danger-button,
+    .announcement-dismiss-btn,
+    .asst-send,
+    .lp-btn
+  ):hover:not(:disabled) {
+  box-shadow: var(--nb-shadow-lg);
+  transform: translate(-2px, -2px);
+}
+
+body :is(
+    .dark-button,
+    .primary-button,
+    .white-button,
+    .glass-button,
+    .small-button,
+    .secondary-button,
+    .reset-button,
+    .coral-button,
+    .purple-button,
+    .yellow-button,
+    .google-button,
+    .copy-upi-button,
+    .donate-upi-button,
+    .watch-button,
+    .note-edit-button,
+    .amount-button,
+    .teacher-danger-button,
+    .announcement-dismiss-btn,
+    .asst-send,
+    .lp-btn
+  ):active:not(:disabled) {
+  box-shadow: 0 0 0 var(--nb-ink);
+  transform: translate(5px, 5px);
+}
+
+body :is(
+    .dark-button,
+    .primary-button,
+    .white-button,
+    .glass-button,
+    .small-button,
+    .secondary-button,
+    .google-button,
+    .asst-send,
+    .lp-btn
+  ):disabled {
+  background: var(--nb-sand);
+  box-shadow: none;
+  color: var(--nb-ink-soft);
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
+
+/* Main actions: purple with white text. */
+body .dark-button,
+body .primary-button,
+body .primary-button.orange,
+body .primary-button.coral,
+body .primary-button.purple,
+body .primary-button.yellow,
+body .primary-button.mint,
+body .asst-send,
+body .lp-btn-primary,
+body .teacher-page .dark-button {
+  background: var(--nb-purple);
+  border: var(--nb-border);
+  color: var(--nb-white);
+}
+
+/* Secondary actions: white, outlined. */
+body .top-actions .dark-button,
+body .white-button,
+body .secondary-button,
+body .google-button,
+body .reset-button,
+body .lp-btn-secondary,
+body .lp-btn-light {
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .top-actions .dark-button:hover,
+body .white-button:hover,
+body .secondary-button:hover,
+body .google-button:hover,
+body .reset-button:hover,
+body .lp-btn-secondary:hover,
+body .lp-btn-light:hover {
+  background: var(--nb-lime);
+  border-color: var(--nb-ink);
+}
+
+body .glass-button,
+body .purple-button,
+body .yellow-button,
+body .watch-button.watched {
+  background: var(--nb-lime);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .coral-button {
+  background: var(--nb-salmon);
+}
+
+body .small-button {
+  box-shadow: var(--nb-shadow-sm);
+}
+
+body .delete-button {
+  min-width: 44px;
+  min-height: 44px;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .delete-button:hover {
+  background: var(--nb-salmon);
+  color: var(--nb-ink);
+}
+
+body .link-button {
+  color: var(--nb-purple-ink);
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Surfaces ---------- */
+
+body :is(
+    .card,
+    .page-intro,
+    .stat-card,
+    .task-card,
+    .note-card,
+    .goal-card,
+    .assignment-card,
+    .skill-card,
+    .video-card,
+    .focus-card,
+    .review-card,
+    .teacher-card,
+    .teacher-session-card,
+    .store-note-card,
+    .sg-group-card,
+    .plan-interview__card,
+    .login-card,
+    .lp-preview-card,
+    .lp-feature,
+    .lp-quick-card,
+    .lp-chat,
+    .note-view-modal,
+    .teacher-confirm,
+    .asst-panel,
+    .welcome-card,
+    .leaderboard-hero,
+    .profile-hero
+  ) {
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow);
+}
+
+body :is(.card, .page-intro, .task-card, .note-card, .goal-card, .assignment-card, .skill-card, .video-card, .focus-card, .review-card, .teacher-card, .teacher-session-card, .store-note-card, .sg-group-card, .plan-interview__card, .login-card, .note-view-modal, .teacher-confirm, .asst-panel, .lp-chat) {
+  background-color: var(--nb-white);
+}
+
+body :is(.welcome-card, .login-card, .note-view-modal, .teacher-confirm, .asst-panel, .lp-chat, .lp-preview-card, .leaderboard-hero, .profile-hero) {
+  box-shadow: var(--nb-shadow-lg);
+}
+
+body :is(.note-card, .store-note-card, .sg-group-card, .lp-feature, .lp-quick-card) {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+body :is(.note-card, .store-note-card, .sg-group-card, .lp-feature, .lp-quick-card):hover {
+  box-shadow: var(--nb-shadow-lg);
+  transform: translate(-2px, -2px);
+}
+
+body :is(.panel-overlay, .note-view-backdrop, .teacher-confirm-backdrop) {
+  background: rgba(25, 25, 25, 0.6);
+}
+
+body .panel {
+  background: var(--nb-paper);
+  border-left: var(--nb-border);
+  box-shadow: -8px 0 0 var(--nb-ink);
+}
+
+body .panel-header {
+  background: var(--nb-lime);
+  border-bottom: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .panel-header h3 {
+  color: var(--nb-ink);
+}
+
+body .panel-close,
+body .note-view-close,
+body .teacher-confirm-close {
+  min-width: 44px;
+  min-height: 44px;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .section-title h3 {
+  color: var(--nb-ink);
+}
+
+/* ---------- Dashboard ---------- */
+
+body .welcome-card {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .welcome-card p {
+  color: var(--nb-white);
+}
+
+/* Replace the soft rings with one flat lime block tucked into the corner. */
+body .welcome-card::before {
+  width: 112px;
+  height: 112px;
+  right: 0;
+  top: 0;
+  background: var(--nb-lime);
+  border: 0;
+  border-bottom: var(--nb-border);
+  border-left: var(--nb-border);
+}
+
+body .welcome-card::after {
+  display: none;
+}
+
+body .date-pill {
+  background: var(--nb-lime);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body .stat-grid > .stat-card:nth-child(4n + 1) {
+  background: var(--nb-lime);
+}
+
+body .stat-grid > .stat-card:nth-child(4n + 2) {
+  background: var(--nb-white);
+}
+
+body .stat-grid > .stat-card:nth-child(4n + 3) {
+  background: var(--nb-salmon);
+}
+
+body .stat-grid > .stat-card:nth-child(4n) {
+  background: var(--nb-purple);
+}
+
+body .stat-grid > .stat-card:nth-child(4n) :is(span, strong, small) {
+  color: var(--nb-white);
+}
+
+body .stat-icon {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+}
+
+body .stat-card span,
+body .stat-card small {
+  color: var(--nb-ink);
+}
+
+body .stat-card strong {
+  color: inherit;
+  font-weight: 800;
+}
+
+/* ---------- Forms ---------- */
+
+body :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    textarea,
+    select
+  ) {
+  min-height: 44px;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body textarea {
+  min-height: 110px;
+}
+
+body :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    textarea,
+    select
+  ):focus {
+  box-shadow: var(--nb-shadow);
+}
+
+body :is(input, textarea):disabled,
+body select:disabled {
+  background: var(--nb-sand);
+  color: var(--nb-ink-soft);
+  cursor: not-allowed;
+}
+
+body ::placeholder {
+  color: #6b6b6b;
+  opacity: 1;
+}
+
+/* Inputs that sit inside their own bordered wrapper stay flat. */
+body .search-box,
+body .custom-amount {
+  background: var(--nb-white);
+  border: var(--nb-border);
+}
+
+body .search-box input,
+body .custom-amount-input {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+body .field-group,
+body .field-group > span,
+body label {
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body .auth-toggle {
+  background: var(--nb-white);
+  border: var(--nb-border);
+  padding: var(--nb-space-1);
+}
+
+body .auth-toggle button {
+  min-height: 44px;
+  border: var(--nb-border);
+  border-color: transparent;
+  color: var(--nb-ink);
+}
+
+body .auth-toggle button.active {
+  background: var(--nb-purple);
+  border-color: var(--nb-ink);
+  box-shadow: none;
+  color: var(--nb-white);
+}
+
+body .login-back {
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body .login-back:hover {
+  background: var(--nb-lime);
+  color: var(--nb-ink);
+}
+
+body .recaptcha-notice a {
+  color: var(--nb-purple-ink);
+  font-weight: 700;
+}
+
+/* ---------- Status messages: error, success, warning, loading, empty ---------- */
+
+body :is(
+    .auth-error,
+    .suggestion-error,
+    .teacher-error,
+    .profile-form-error,
+    .plan-interview__error,
+    .asst-error,
+    .group-provider-error,
+    .leaderboard-alert,
+    .donation-warning
+  ) {
+  background: var(--nb-salmon-soft);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+  font-weight: 600;
+  padding: var(--nb-space-3) var(--nb-space-4);
+}
+
+body :is(
+    .auth-success,
+    .success-message,
+    .suggestion-success,
+    .profile-save-message,
+    .teacher-status,
+    .group-collaboration-status,
+    .sg-notification-state
+  ) {
+  background: var(--nb-lime);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+  font-weight: 600;
+}
+
+body :is(.auth-success, .teacher-status, .group-collaboration-status):empty {
+  display: none;
+}
+
+body .rich-editor-loading {
+  background: var(--nb-sand);
+  border: 2px dashed var(--nb-ink);
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body :is(.empty-state, .empty-video, .calendar-empty, .teacher-chat-empty, .asst-empty) {
+  border-color: var(--nb-ink);
+  color: var(--nb-ink);
+}
+
+body :is(.empty-state, .empty-video) {
+  background: var(--nb-white);
+  border: 2px dashed var(--nb-ink);
+}
+
+/* ---------- Tags, chips, progress ---------- */
+
+body :is(
+    .tag,
+    .task-chip,
+    .priority,
+    .mini-tags span,
+    .lp-chip,
+    .teacher-badge,
+    .sg-badge,
+    .asst-chip,
+    .plan-interview__answers span,
+    .profile-summary-chips span,
+    .leaderboard-name em
+  ) {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body :is(.tag.orange, .tag.mint, .lp-chip-forest, .task-chip, .priority.low) {
+  background: var(--nb-lime);
+}
+
+body :is(.tag.coral, .priority.high, .lp-chip-persimmon) {
+  background: var(--nb-salmon);
+}
+
+body :is(.tag.yellow, .tag.blue, .priority.medium) {
+  background: var(--nb-lilac);
+}
+
+body .tag.purple {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .tag.gray {
+  background: var(--nb-sand);
+}
+
+body .asst-chip {
+  min-height: 44px;
+}
+
+body .asst-chip:hover:not(:disabled) {
+  background: var(--nb-lime);
+}
+
+body .progress-track,
+body .lp-progress,
+body .password-strength-bar {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  min-height: 16px;
+}
+
+body .progress-fill,
+body .progress-fill.orange,
+body .progress-fill.purple {
+  background: var(--nb-purple);
+}
+
+body .progress-fill.coral {
+  background: var(--nb-salmon);
+}
+
+body .progress-fill.yellow,
+body .progress-fill.blue,
+body .progress-fill.mint {
+  background: var(--nb-lime);
+}
+
+body .lp-progress-fill {
+  background: var(--nb-lime);
+}
+
+/* ---------- Tasks, calendar and focus ---------- */
+
+/* Completed: lime fill, struck-through title, full opacity. */
+body .task-card.completed,
+body .task-row.done {
+  background: var(--nb-lime);
+  opacity: 1;
+}
+
+body .task-card.completed h3,
+body .task-row.done strong {
+  color: var(--nb-ink-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+body .check-button {
+  position: relative;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-white);
+}
+
+/* Enlarges the touch target to 44px without changing the layout. */
+body .check-button::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+body .check-button.checked {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .calendar-weekday {
+  color: var(--nb-ink);
+  font-weight: 800;
+}
+
+body .calendar-day {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+}
+
+body .calendar-day:hover {
+  background: var(--nb-lime);
+}
+
+body .calendar-day.selected,
+body .calendar-day.selected:not(.today) {
+  background: var(--nb-purple);
+  border: var(--nb-border);
+  color: var(--nb-white);
+}
+
+body .calendar-day.today {
+  background: var(--nb-lime);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+  font-weight: 800;
+}
+
+body .calendar-day.today.selected {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .timer-circle {
+  border: 6px solid var(--nb-ink);
+  box-shadow: var(--nb-shadow);
+}
+
+body .timer-modes button,
+body .leaderboard-months button,
+body .anon-toggle-item,
+body .plan-interview__options button {
+  min-height: 44px;
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+body .timer-modes button:hover,
+body .leaderboard-months button:hover,
+body .anon-toggle-item:hover,
+body .plan-interview__options button:hover:not(:disabled) {
+  background: var(--nb-lime);
+}
+
+body .timer-modes button.selected,
+body .leaderboard-months button.active,
+body .anon-toggle-item.selected,
+body .plan-interview__options button.is-selected,
+body .amount-button.selected {
+  background: var(--nb-purple);
+  border-color: var(--nb-ink);
+  color: var(--nb-white);
+}
+
+/* ---------- Landing page ---------- */
+
+body .lp-header {
+  min-height: 96px;
+  height: auto;
+  padding-block: var(--nb-space-3);
+}
+
+body .lp-brand {
+  gap: var(--nb-space-3);
+}
+
+body .lp-brand-name {
+  color: var(--nb-ink);
+  font-size: 24px;
+  line-height: 0.95;
+}
+
+body .lp-brand-name span {
+  display: block;
+}
+
+body .lp-nav {
+  gap: var(--nb-space-2);
+  font-weight: 700;
+}
+
+body .lp-nav a,
+body .lp-btn {
+  white-space: nowrap;
+}
+
+body .lp-nav a {
+  padding: var(--nb-space-2) var(--nb-space-3);
+  border: var(--nb-border-thin);
+  border-color: transparent;
+}
+
+body .lp-nav a:hover {
+  background: var(--nb-lime);
+  border-color: var(--nb-ink);
+  color: var(--nb-ink);
+}
+
+/* "Log in" reads as plain text, like the Get started button's quiet neighbour. */
+body .lp-btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--nb-ink);
+}
+
+body .lp-btn-ghost:hover:not(:disabled) {
+  background: var(--nb-lime);
+  border-color: var(--nb-ink);
+  box-shadow: var(--nb-shadow-sm);
+}
+
+body .lp-hero {
+  grid-template-columns: minmax(0, 1fr) 460px;
+  gap: var(--nb-space-6);
+  min-height: 0;
+  padding-block: var(--nb-space-5) var(--nb-space-7);
+}
+
+body .lp-hero-copy {
+  gap: var(--nb-space-5);
+}
+
+body .lp-pill {
+  padding: var(--nb-space-2) var(--nb-space-4);
+  background: var(--nb-lime);
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow-sm);
+  color: var(--nb-ink);
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body .lp-hero h1 {
+  font-size: clamp(38px, 4.8vw, 60px);
+  letter-spacing: -0.05em;
+  line-height: 1.04;
+}
+
+body .lp-hero-mark {
+  display: inline-block;
+  padding: 0 0.12em;
+  background: var(--nb-purple);
+  color: var(--nb-ink);
+}
+
+body .lp-hero-copy > p {
+  max-width: 560px;
+  color: var(--nb-ink);
+  font-size: 22px;
+  line-height: 1.4;
+}
+
+body .lp-hero-copy > p strong {
+  font-weight: 800;
+}
+
+body .lp-btn-large {
+  min-height: 56px;
+  padding-inline: var(--nb-space-5);
+  font-size: 19px;
+}
+
+body .lp-preview-figure {
+  margin: 0;
+  display: grid;
+  gap: var(--nb-space-3);
+}
+
+body .lp-preview-figure figcaption {
+  color: var(--nb-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+body .lp-preview-figure-light figcaption {
+  color: var(--nb-white);
+}
+
+/* Hero preview: Today list, focus timer and study-room card, overlapping like a collage. */
+body .lp-preview {
+  height: 440px;
+}
+
+body .lp-preview-tasks {
+  left: 0;
+  top: 0;
+  width: 410px;
+  padding: var(--nb-space-5) var(--nb-space-5) var(--nb-space-3);
+  gap: 0;
+}
+
+body .lp-preview-head {
+  padding-bottom: var(--nb-space-3);
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+body .lp-preview-row {
+  min-height: 52px;
+  border-top: var(--nb-border-thin);
+  font-size: 17px;
+}
+
+body .lp-check {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+  border: var(--nb-border);
+}
+
+body .lp-check-on {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .lp-preview-focus {
+  right: 0;
+  top: 226px;
+  z-index: 2;
+  width: 250px;
+  padding: var(--nb-space-5);
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .lp-preview-focus span {
+  font-size: 18px;
+  font-weight: 700;
+  opacity: 1;
+}
+
+body .lp-preview-focus strong {
+  font-size: 58px;
+}
+
+body .lp-preview-group {
+  left: 0;
+  top: 296px;
+  z-index: 1;
+  width: 270px;
+  padding: var(--nb-space-4) var(--nb-space-5);
+  display: grid;
+  gap: var(--nb-space-3);
+  background: var(--nb-salmon);
+  color: var(--nb-ink);
+}
+
+body .lp-preview-group strong {
+  font-size: 18px;
+}
+
+body .lp-avatars {
+  display: flex;
+  gap: var(--nb-space-2);
+}
+
+body .lp-preview-group .lp-avatar {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+}
+
+body .lp-avatar-lime {
+  background: var(--nb-lime);
+}
+
+body .lp-avatar-white {
+  background: var(--nb-white);
+}
+
+body .lp-avatar-purple {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+/* Quick highlights under the hero. */
+body .lp-quick {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding: var(--nb-space-5) var(--nb-space-5) var(--nb-space-8);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--nb-space-5);
+}
+
+body .lp-quick-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--nb-space-4);
+  padding: var(--nb-space-5);
+  color: var(--nb-ink);
+  text-decoration: none;
+}
+
+body .lp-quick-lime {
+  background: var(--nb-lime);
+}
+
+body .lp-quick-white {
+  background: var(--nb-white);
+}
+
+body .lp-quick-salmon {
+  background: var(--nb-salmon);
+}
+
+body .lp-quick-copy {
+  display: grid;
+  gap: var(--nb-space-1);
+}
+
+body .lp-quick-copy strong {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+body .lp-quick-copy span {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+body .lp-eyebrow {
+  width: fit-content;
+  padding: var(--nb-space-1) var(--nb-space-3);
+  background: var(--nb-ink);
+  color: var(--nb-lime);
+  font-weight: 800;
+}
+
+body .lp-eyebrow-light {
+  background: var(--nb-lime);
+  color: var(--nb-ink);
+}
+
+body .lp-hero-copy > p,
+body .lp-section-head p,
+body .lp-feature p,
+body .lp-steps p {
+  color: var(--nb-ink);
+}
+
+body .lp-feature {
+  padding: var(--nb-space-5);
+}
+
+body .lp-feature-grid > .lp-feature:nth-child(3n + 1) {
+  background: var(--nb-lime);
+}
+
+body .lp-feature-grid > .lp-feature:nth-child(3n + 2) {
+  background: var(--nb-white);
+}
+
+body .lp-feature-grid > .lp-feature:nth-child(3n) {
+  background: var(--nb-salmon);
+}
+
+body .lp-feature-icon {
+  background: var(--nb-white);
+  border: var(--nb-border);
+  color: var(--nb-ink);
+}
+
+body .lp-tone-forest,
+body .lp-tone-persimmon {
+  background: var(--nb-white);
+  color: var(--nb-ink);
+}
+
+body .lp-groups {
+  background: var(--nb-purple);
+  border-block: var(--nb-border);
+  color: var(--nb-white);
+}
+
+body .lp-groups-copy > p {
+  color: var(--nb-white);
+}
+
+body .lp-groups li svg {
+  color: var(--nb-lime);
+}
+
+body .lp-chat {
+  color: var(--nb-ink);
+}
+
+body .lp-chat-head {
+  border-bottom: var(--nb-border-thin);
+}
+
+body .lp-live {
+  background: var(--nb-salmon);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+body .lp-bubble p {
+  border: var(--nb-border-thin);
+}
+
+body .lp-bubble-them p {
+  background: var(--nb-lime);
+}
+
+body .lp-bubble-me p {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .lp-file {
+  background: var(--nb-lilac);
+  border: var(--nb-border-thin);
+}
+
+body .lp-file-icon {
+  background: var(--nb-ink);
+  border: var(--nb-border-thin);
+  color: var(--nb-paper);
+}
+
+body .lp-steps li {
+  border-top: var(--nb-border);
+}
+
+body .lp-step-number {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  background: var(--nb-lime);
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow-sm);
+  color: var(--nb-ink);
+  font-size: 20px;
+}
+
+body .lp-footer {
+  background: var(--nb-ink);
+  border-top: var(--nb-border);
+  color: var(--nb-paper);
+}
+
+body .lp-footer .lp-brand-name,
+body .lp-footer small {
+  color: var(--nb-paper);
+}
+
+/* ---------- Mahei Assistance launcher ---------- */
+
+body .asst-fab {
+  width: 56px;
+  height: 56px;
+  background: var(--nb-purple);
+  border: var(--nb-border);
+  box-shadow: var(--nb-shadow);
+  color: var(--nb-white);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+body .asst-fab:hover {
+  background: var(--nb-purple);
+  box-shadow: var(--nb-shadow-lg);
+  transform: translate(-2px, -2px);
+}
+
+body .asst-dot {
+  background: var(--nb-salmon);
+  border: var(--nb-border-thin);
+}
+
+body .asst-header {
+  background: var(--nb-lime);
+  border-bottom: var(--nb-border);
+}
+
+body .asst-title {
+  color: var(--nb-ink);
+  font-weight: 800;
+}
+
+body .asst-title-icon {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+}
+
+body .asst-icon-button,
+body .asst-text-button {
+  color: var(--nb-ink);
+}
+
+body .asst-icon-button:hover,
+body .asst-text-button:hover {
+  background: var(--nb-white);
+  color: var(--nb-ink);
+}
+
+body .asst-bubble {
+  border: var(--nb-border-thin);
+}
+
+body .asst-bubble-user {
+  background: var(--nb-purple);
+  color: var(--nb-white);
+}
+
+body .asst-bubble-reply {
+  background: var(--nb-lime);
+  color: var(--nb-ink);
+}
+
+/* ---------- AI Teacher, leaderboard, profile, notes ---------- */
+
+body :is(
+    .teacher-message,
+    .teacher-linked-plan,
+    .teacher-result,
+    .teacher-last-result,
+    .teacher-resources,
+    .teacher-importing,
+    .teacher-quiz,
+    .teacher-sessions,
+    .study-plan-teacher-link,
+    .plan-interview__assistant
+  ) {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+}
+
+body .teacher-message.user {
+  background: var(--nb-lilac);
+}
+
+body .leaderboard-list li {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+}
+
+body .leaderboard-list li.is-you {
+  background: var(--nb-lime);
+  border: var(--nb-border);
+}
+
+body .leaderboard-rank {
+  background: var(--nb-white);
+  border: var(--nb-border-thin);
+  color: var(--nb-ink);
+}
+
+body .leaderboard-rank.gold {
+  background: var(--nb-lime);
+}
+
+body .leaderboard-rank.silver {
+  background: var(--nb-lilac);
+}
+
+body .leaderboard-rank.bronze {
+  background: var(--nb-salmon);
+}
+
+body .profile-avatar-large,
+body .profile-avatar-picker button {
+  border: var(--nb-border);
+}
+
+body .rich-editor {
+  background: var(--nb-white);
+  border: var(--nb-border);
+}
+
+body .note-view-header,
+body .note-editor-page-header {
+  border-bottom: var(--nb-border-thin);
+}
+
+/* ---------- Motion preferences ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  body *,
+  body *::before,
+  body *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+
+  body :is(button, a, .note-card, .store-note-card, .sg-group-card, .lp-feature, .lp-quick-card, .nav-item):hover,
+  body :is(button, a):active {
+    transform: none !important;
+  }
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1080px) {
+  body .lp-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body .lp-preview {
+    width: 100%;
+    max-width: 460px;
+    justify-self: start;
+  }
+
+  body .lp-quick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  body .welcome-card::before {
+    display: none;
+  }
+
+  /* The section links give way to the sign-in buttons before they can wrap. */
+  body .lp-nav {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  body .lp-header {
+    min-height: 80px;
+  }
+
+  body .lp-hero {
+    padding-block: var(--nb-space-3) var(--nb-space-6);
+  }
+
+  /* Narrow screens: the three cards stack instead of overlapping each other. */
+  body .lp-preview {
+    height: 530px;
+  }
+
+  body .lp-preview-tasks {
+    width: calc(100% - 8px);
+    padding-inline: var(--nb-space-4);
+  }
+
+  body .lp-preview-focus {
+    top: 214px;
+    width: 220px;
+  }
+
+  body .lp-preview-group {
+    top: 384px;
+    width: min(270px, calc(100% - 8px));
+  }
+
+  body .lp-quick {
+    padding-bottom: var(--nb-space-7);
+  }
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <title>Mahei-Pathap</title>
+  <rect x="22" y="22" width="208" height="208" fill="#191919"/>
+  <rect x="10" y="10" width="208" height="208" fill="#7856FF"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#191919" stroke-width="32" d="M114 158C88 156 56 140 54 108C52 80 68 58 92 50"/>
+    <path stroke="#191919" stroke-width="32" d="M114 158C140 156 172 140 174 108C176 80 160 58 136 50"/>
+    <path stroke="#D8F36A" stroke-width="18" d="M114 158C88 156 56 140 54 108C52 80 68 58 92 50"/>
+    <path stroke="#D8F36A" stroke-width="18" d="M114 158C140 156 172 140 174 108C176 80 160 58 136 50"/>
+  </g>
+  <circle cx="114" cy="112" r="22" fill="#FF927C" stroke="#191919" stroke-width="8"/>
+  <rect x="10" y="176" width="208" height="42" fill="#191919"/>
+  <path d="M10 208L62 186L114 208L166 186L218 208" fill="none" stroke="#D8F36A" stroke-width="9"/>
+  <rect x="10" y="10" width="208" height="208" fill="none" stroke="#191919" stroke-width="12"/>
+</svg>

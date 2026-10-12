@@ -1,16 +1,43 @@
 import {
   ArrowRight,
   BookOpen,
+  CalendarDays,
   Check,
   CheckSquare,
   Clock3,
   FileText,
   GraduationCap,
-  Sprout,
+  Target,
   Trophy,
+  User,
   Users,
 } from "lucide-react";
+import BrandMark from "./BrandMark.jsx";
 import "./LandingPage.css";
+
+const QUICK_LINKS = [
+  {
+    icon: CalendarDays,
+    tone: "lime",
+    title: "Plan your day",
+    text: "Bring your tasks, notes and goals together in one place.",
+    href: "#features",
+  },
+  {
+    icon: Target,
+    tone: "white",
+    title: "Find your focus",
+    text: "Stay on track with focus sessions and a calmer study routine.",
+    href: "#how",
+  },
+  {
+    icon: Users,
+    tone: "salmon",
+    title: "Learn together",
+    text: "Join study groups, share notes and make progress with your people.",
+    href: "#groups",
+  },
+];
 
 const FEATURES = [
   {
@@ -75,13 +102,15 @@ const STEPS = [
   },
 ];
 
-function Brand() {
+function Brand({ onDark = false }) {
   return (
     <div className="lp-brand">
       <span className="lp-brand-mark">
-        <Sprout size={22} aria-hidden="true" />
+        <BrandMark size={52} onDark={onDark} />
       </span>
-      <span className="lp-brand-name">Mahei-Pathap</span>
+      <span className="lp-brand-name">
+        <span>Mahei</span> <span>Pathap</span>
+      </span>
     </div>
   );
 }
@@ -92,22 +121,21 @@ function HeroPreview() {
       <div className="lp-preview-card lp-preview-tasks">
         <div className="lp-preview-head">
           <strong>Today</strong>
-          <span className="lp-chip lp-chip-forest">3 open</span>
+          <span className="lp-chip lp-chip-forest">3 tasks</span>
         </div>
-        <div className="lp-preview-row lp-done">
+        <div className="lp-preview-row">
           <span className="lp-check lp-check-on">
-            <Check size={13} strokeWidth={3} />
+            <Check size={14} strokeWidth={3} />
           </span>
-          <span>Plan the week</span>
+          <span>Plan this week</span>
         </div>
         <div className="lp-preview-row">
           <span className="lp-check" />
-          <span className="lp-grow">Finish physics problem set</span>
-          <span className="lp-chip lp-chip-persimmon">6:00 PM</span>
+          <span>Finish physics problem set</span>
         </div>
         <div className="lp-preview-row">
           <span className="lp-check" />
-          <span>Revise organic chemistry notes</span>
+          <span>Revise chemistry notes</span>
         </div>
       </div>
 
@@ -120,10 +148,17 @@ function HeroPreview() {
       </div>
 
       <div className="lp-preview-card lp-preview-group">
-        <span className="lp-avatar">M</span>
-        <div>
-          <small>Physics, Class 12</small>
-          <p>Meera shared her notes in the group</p>
+        <strong>Study together</strong>
+        <div className="lp-avatars">
+          <span className="lp-avatar lp-avatar-lime">
+            <User size={20} aria-hidden="true" />
+          </span>
+          <span className="lp-avatar lp-avatar-white">
+            <User size={20} aria-hidden="true" />
+          </span>
+          <span className="lp-avatar lp-avatar-purple">
+            <User size={20} aria-hidden="true" />
+          </span>
         </div>
       </div>
     </div>
@@ -163,54 +198,73 @@ function GroupPreview() {
 export default function LandingPage({ onLogin, onSignup }) {
   return (
     <div className="lp">
-      <header className="lp-header">
-        <Brand />
+      <div className="lp-topbar">
+        <header className="lp-header">
+          <Brand />
 
-        <nav className="lp-nav" aria-label="Sections">
-          <a href="#features">Features</a>
-          <a href="#groups">Study Groups</a>
-          <a href="#how">How it works</a>
-        </nav>
+          <nav className="lp-nav" aria-label="Sections">
+            <a href="#features">Features</a>
+            <a href="#groups">Study Groups</a>
+            <a href="#how">How it works</a>
+          </nav>
 
-        <div className="lp-header-actions">
-          <button type="button" className="lp-btn lp-btn-ghost" onClick={onLogin}>
-            Log in
-          </button>
-          <button type="button" className="lp-btn lp-btn-primary" onClick={onSignup}>
-            Get started
-          </button>
-        </div>
-      </header>
+          <div className="lp-header-actions">
+            <button type="button" className="lp-btn lp-btn-ghost" onClick={onLogin}>
+              Log in
+            </button>
+            <button type="button" className="lp-btn lp-btn-primary" onClick={onSignup}>
+              Get started
+            </button>
+          </div>
+        </header>
+      </div>
 
       <main>
         <section className="lp-hero" aria-labelledby="lp-hero-title">
           <div className="lp-hero-copy">
             <span className="lp-pill">
-              <Sprout size={16} aria-hidden="true" />
+              <GraduationCap size={20} aria-hidden="true" />
               Made for students
             </span>
             <h1 id="lp-hero-title">
-              Study with focus.
+              Study with <span className="lp-hero-mark">focus.</span>
               <br />
               Grow with your people.
             </h1>
             <p>
-              Mahei-Pathap brings your tasks, notes, focus sessions and study
-              groups into one calm workspace, with an AI teacher for the moments
-              you get stuck.
+              Your <strong>tasks, notes,</strong> focus sessions and study groups
+              {" "}&mdash; together in one workspace.
             </p>
             <div className="lp-hero-actions">
               <button type="button" className="lp-btn lp-btn-primary lp-btn-large" onClick={onSignup}>
                 Get started
-                <ArrowRight size={18} aria-hidden="true" />
+                <ArrowRight size={20} aria-hidden="true" />
               </button>
-              <a className="lp-btn lp-btn-secondary lp-btn-large" href="#features">
+              <a className="lp-btn lp-btn-secondary lp-btn-large" href="#how">
                 See how it works
               </a>
             </div>
           </div>
 
-          <HeroPreview />
+          <figure className="lp-preview-figure">
+            <HeroPreview />
+            <figcaption>Illustrative preview with sample data, not a live account.</figcaption>
+          </figure>
+        </section>
+
+        <section className="lp-quick" aria-label="Highlights">
+          {QUICK_LINKS.map(({ icon: Icon, tone, title, text, href }) => (
+            <a className={`lp-quick-card lp-quick-${tone}`} href={href} key={title}>
+              <span className="lp-quick-icon">
+                <Icon size={32} aria-hidden="true" />
+              </span>
+              <span className="lp-quick-copy">
+                <strong>{title}</strong>
+                <span>{text}</span>
+              </span>
+              <ArrowRight size={24} aria-hidden="true" />
+            </a>
+          ))}
         </section>
 
         <section className="lp-section" id="features" aria-labelledby="lp-features-title">
@@ -255,7 +309,10 @@ export default function LandingPage({ onLogin, onSignup }) {
             </button>
           </div>
 
-          <GroupPreview />
+          <figure className="lp-preview-figure lp-preview-figure-light">
+            <GroupPreview />
+            <figcaption>Illustrative preview with sample messages.</figcaption>
+          </figure>
         </section>
 
         <section className="lp-section" id="how" aria-labelledby="lp-how-title">
@@ -286,7 +343,7 @@ export default function LandingPage({ onLogin, onSignup }) {
       </main>
 
       <footer className="lp-footer">
-        <Brand />
+        <Brand onDark />
         <small>© {new Date().getFullYear()} Mahei-Pathap. All rights reserved.</small>
       </footer>
     </div>
