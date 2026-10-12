@@ -14,6 +14,35 @@ export function validateProfile(input) {
   if (!Number.isInteger(minutes) || minutes < 10 || minutes > 180) throw new TeacherError('Choose 10–180 study minutes per day.');
   return { ...profile, minutes };
 }
+const PLAN_TEXT_LIMIT = 8000;
+const PLAN_DEFAULTS = { level: 'Not specified', goal: 'Follow my saved study plan', language: 'English', minutes: 25 };
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+// A saved Mahei Assistance plan, turned into a learning profile so the student can skip the setup form.
+// The plan text becomes the syllabus (the model already scopes lessons from it) and is kept as sourcePlan.
+export function validatePlanImport(input) {
+  if (!input || typeof input !== 'object') throw new TeacherError('Choose a saved study plan to teach from.');
+  const plan = typeof input.plan === 'string' ? input.plan.trim() : '';
+  if (!plan || plan.length > PLAN_TEXT_LIMIT) throw new TeacherError(`Provide the study plan text (up to ${PLAN_TEXT_LIMIT} characters).`);
+  const optional = (key, max) => {
+    const value = input[key];
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) return PLAN_DEFAULTS[key];
+    if (!text(value, max)) throw new TeacherError(`Please provide ${key} (up to ${max} characters).`);
+    return value.trim();
+  };
+  const requested = Number(input.minutes);
+  const minutes = input.minutes == null || Number.isNaN(requested) ? PLAN_DEFAULTS.minutes : clamp(Math.round(requested), 10, 180);
+  const profile = validateProfile({
+    level: optional('level', 120),
+    subject: input.subject,
+    language: optional('language', 80),
+    goal: optional('goal', 500),
+    minutes,
+    syllabus: plan,
+  });
+  const title = typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 200) : `${profile.subject} study plan`;
+  return { profile, sourcePlan: { title, plan } };
+}
 export function validateQuiz(value) {
   if (!Array.isArray(value?.questions) || value.questions.length !== 3) throw new TeacherError('The AI quiz could not be checked. Please try again.', 502);
   const questions = value.questions.map((q, i) => {
@@ -24,11 +53,13 @@ export function validateQuiz(value) {
   });
   return questions;
 }
-export function validateRoadmap(value, dailyMinutes) {
+// keepMinutes: honour a topic's own session length (from a saved plan) instead of the daily default.
+export function validateRoadmap(value, dailyMinutes, { keepMinutes = false } = {}) {
   if (!Array.isArray(value?.topics) || value.topics.length < 3 || value.topics.length > 10) throw new TeacherError('The AI roadmap could not be checked. Please try again.', 502);
   return value.topics.map((t, i) => {
     if (!text(t.title, 160) || !text(t.objective, 700)) throw new TeacherError('The AI roadmap could not be checked. Please try again.', 502);
-    return { id: `topic${i + 1}`, title: t.title, objective: t.objective, minutes: dailyMinutes, status: 'pending' };
+    const minutes = keepMinutes && Number.isFinite(t.minutes) ? clamp(Math.round(t.minutes), 5, 180) : dailyMinutes;
+    return { id: `topic${i + 1}`, title: t.title, objective: t.objective, minutes, status: 'pending' };
   });
 }
 export function gradeQuiz(quiz, answers) {

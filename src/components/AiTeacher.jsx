@@ -5,6 +5,9 @@ import './AiTeacher.css';
 import AiResponse from './AiResponse.jsx';
 import { teacherResources } from '../lib/teacherResources.js';
 import { roadmapXpMessage } from '../lib/leaderboard.js';
+import { buildPlanHandoff, planToProfile } from '../lib/studyPlanHandoff.js';
+
+const START_LESSON_MESSAGE = 'Start the first lesson from my roadmap.';
 
 function LearningResources({ messages, index, profile, topic }) {
   const links = teacherResources(messages, index, profile, topic);
@@ -18,7 +21,7 @@ function LearningResources({ messages, index, profile, topic }) {
 }
 
 const initialProfile = { level: '', subject: '', language: 'English', goal: '', minutes: 25, syllabus: '' };
-export default function AiTeacher({ userId, studyPlans = [], request = teacherRequest }) {
+export default function AiTeacher({ userId, studyPlans = [], planHandoff = null, onPlanHandoffConsumed, request = teacherRequest }) {
   const [state, setState] = useState(null);
   const [profile, setProfile] = useState(initialProfile);
   const [loading, setLoading] = useState(true);
@@ -30,6 +33,12 @@ export default function AiTeacher({ userId, studyPlans = [], request = teacherRe
   const [sessionOpen, setSessionOpen] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState(null);
+  // Plan handoff: idle -> (session) -> import -> importing -> start -> done, or failed (falls back to a prefilled form).
+  const [stage, setStage] = useState('idle');
+  const [localHandoff, setLocalHandoff] = useState(null);
+  const handoffLock = useRef('');
+  const handoff = planHandoff || localHandoff;
+  const building = Boolean(handoff) && stage !== 'done' && stage !== 'failed';
   const mounted = useRef(true);
   const pending = useRef(null);
   const inFlight = useRef(false);
@@ -56,7 +65,7 @@ export default function AiTeacher({ userId, studyPlans = [], request = teacherRe
   useEffect(() => { setSessionOpen(false); }, [state?.activeSessionId]);
 
   async function run(action, data = {}) {
-    if (inFlight.current) return;
+    if (inFlight.current) return false;
     inFlight.current = true; setBusy(true); setError('');
     const signature = JSON.stringify({ action, ...data });
     const previous = pending.current;
@@ -64,17 +73,53 @@ export default function AiTeacher({ userId, studyPlans = [], request = teacherRe
     pending.current = { signature, id: requestId };
     try {
       const value = await request({ action, ...data, learningContext: { studyPlans }, requestId, revision: state?.revision || 0 });
-      if (!mounted.current) return;
+      if (!mounted.current) return false;
       setState(value); pending.current = null;
       if (action === 'chat') setMessage('');
-      if (action === 'grade' || action === 'quiz' || action === 'setup') setAnswers({});
+      if (action === 'grade' || action === 'quiz' || action === 'setup' || action === 'import_plan') setAnswers({});
       if (action === 'grade') setTab('learn');
       if (action === 'new_session') { setProfile(initialProfile); setMessage(''); setAnswers({}); setTab('learn'); }
       if (action === 'switch_session') { setMessage(''); setAnswers({}); setTab('learn'); }
       if (action === 'delete_session') { setDeleteCandidate(null); setMessage(''); setAnswers({}); setTab('learn'); }
-    } catch (err) { if (mounted.current) setError(err.message); }
+      return true;
+    } catch (err) { if (mounted.current) setError(err.message); return false; }
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
+
+  function finishHandoff(nextStage) {
+    setStage(nextStage); setLocalHandoff(null);
+    if (onPlanHandoffConsumed) onPlanHandoffConsumed();
+  }
+  // If the automatic import fails (network, AI allowance, or an older deployed function), the student
+  // still gets the normal setup form, prefilled from their plan.
+  function failHandoff() {
+    if (handoff) setProfile(planToProfile(handoff));
+    finishHandoff('failed');
+  }
+  function startFromPlan() {
+    const next = buildPlanHandoff({ task: studyPlans[0] });
+    if (!next) return;
+    handoffLock.current = ''; setStage('idle'); setLocalHandoff(next);
+  }
+  // Each step waits for the previous one to settle, because run() sends the current revision.
+  useEffect(() => {
+    if (!handoff || loading || busy || !state || stage === 'done' || stage === 'failed') return;
+    if (stage === 'session') { if (!state.profile) setStage('import'); return; }
+    if (handoffLock.current === stage) return;
+    handoffLock.current = stage;
+    if (stage === 'idle') {
+      if (state.sourcePlan?.title === handoff.title) { finishHandoff('done'); return; }
+      if (!state.profile) { setStage('import'); return; }
+      setStage('session');
+      run('new_session').then(ok => { if (!ok) failHandoff(); });
+    } else if (stage === 'import') {
+      setStage('importing');
+      run('import_plan', { plan: handoff }).then(ok => { if (ok) setStage('start'); else failHandoff(); });
+    } else if (stage === 'start' && state.profile && !state.quiz) {
+      finishHandoff('done'); setTab('learn');
+      run('chat', { message: START_LESSON_MESSAGE });
+    }
+  }, [handoff, stage, state, loading, busy]);
   const topic = state?.roadmap.find(t => t.id === state.currentTopicId);
   const roadmapXpNote = roadmapXpMessage(state?.roadmapXp);
   const completed = state?.roadmap.filter(t => t.status === 'complete').length || 0;
@@ -89,11 +134,11 @@ export default function AiTeacher({ userId, studyPlans = [], request = teacherRe
     <div className="teacher-status" role="status" aria-live="polite">{busy ? 'Your AI teacher is preparing and saving your next step…' : loading ? 'Loading your learning space…' : ''}</div>
     {state?.sessions?.length > 0 && <section className="teacher-sessions" aria-label="Saved subject sessions"><div className="teacher-sessions-heading"><div><p className="teacher-eyebrow">MY SUBJECTS</p><h3>Switch learning session</h3></div><button type="button" className="dark-button" disabled={busy || state.sessions.length >= 6} onClick={() => run('new_session')}><Plus size={16} /> New subject</button></div><div className="teacher-session-list">{state.sessions.map(session => <article key={session.id} className={`teacher-session-card ${session.id === state.activeSessionId ? 'active' : ''}`}><button type="button" className="teacher-session-switch" aria-pressed={session.id === state.activeSessionId} disabled={busy || session.id === state.activeSessionId} onClick={() => run('switch_session', { sessionId: session.id })}><strong>{session.subject}</strong><span>{session.level}</span><small>{session.total ? `${session.completed}/${session.total} topics complete` : 'Setup in progress'}</small></button><button type="button" className="teacher-session-delete" aria-label={`Delete ${session.subject} subject`} title="Delete subject" disabled={busy || state.sessions.length === 1} onClick={() => setDeleteCandidate(session)}><Trash2 size={15} /></button></article>)}</div>{state.sessions.length === 1 && <p className="teacher-session-note">Keep at least one subject. Add another subject before deleting this one.</p>}</section>}
     {deleteCandidate && <div className="teacher-confirm-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setDeleteCandidate(null); }}><section className="teacher-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-subject-title" aria-describedby="delete-subject-description"><button type="button" className="teacher-confirm-close" aria-label="Close confirmation" disabled={busy} onClick={() => setDeleteCandidate(null)}><X size={18} /></button><div className="teacher-confirm-icon"><Trash2 size={22} /></div><p className="teacher-eyebrow">DELETE SUBJECT</p><h3 id="delete-subject-title">Delete {deleteCandidate.subject}?</h3><p id="delete-subject-description">This will permanently remove its lessons, messages, roadmap and quiz progress.</p><div className="teacher-confirm-actions"><button type="button" className="secondary-button" disabled={busy} onClick={() => setDeleteCandidate(null)}>Keep subject</button><button type="button" className="teacher-danger-button" disabled={busy} onClick={() => run('delete_session', { sessionId: deleteCandidate.id })}>{busy ? 'Deleting…' : 'Yes, delete subject'}</button></div></section></div>}
-    {studyPlans.length > 0 && <div className="teacher-linked-plan"><div><p className="teacher-eyebrow">PLAN FROM MAHEI ASSISTANCE</p><strong>{studyPlans[0].title}</strong><span>Your AI teacher can read this saved plan and use it in lessons.</span></div>{state?.profile && <button type="button" className="secondary-button" disabled={busy || Boolean(state.quiz)} onClick={() => { setTab('learn'); run('chat', { message: `Teach me from my saved study plan: ${studyPlans[0].title}. Begin with the first unfinished learning step.` }); }}>Teach this plan</button>}</div>}
-    {loading ? <div className="teacher-card">Opening your learning space…</div> : !state?.profile ? <div className="teacher-onboarding">
+    {studyPlans.length > 0 && <div className="teacher-linked-plan"><div><p className="teacher-eyebrow">PLAN FROM MAHEI ASSISTANCE</p><strong>{studyPlans[0].title}</strong><span>Your AI teacher can read this saved plan and use it in lessons.</span></div>{state?.profile && <button type="button" className="secondary-button" disabled={busy || Boolean(state.quiz)} onClick={() => { setTab('learn'); run('chat', { message: `Teach me from my saved study plan: ${studyPlans[0].title}. Begin with the first unfinished learning step.` }); }}>Teach this plan</button>}{!state?.profile && !building && !loading && <button type="button" className="secondary-button" disabled={busy} onClick={startFromPlan}>Build roadmap from this plan</button>}</div>}
+    {loading ? <div className="teacher-card">Opening your learning space…</div> : building && !state?.profile ? <div className="teacher-card teacher-importing" role="status"><Sparkles size={26} /><h3>Building your roadmap…</h3><p>Mahei is turning your study plan into a step-by-step learning path. Your first lesson starts automatically, so there is nothing to fill in.</p></div> : !state?.profile ? <div className="teacher-onboarding">
       <aside className="teacher-welcome"><BookOpen size={36} /><h3>A teacher that starts with you.</h3><p>Tell Mahei what you want to learn. A short starting quiz helps your AI teacher choose where to begin.</p><ol><li>Share your syllabus</li><li>Try three starting questions</li><li>Get your roadmap and first lesson</li></ol><p className="teacher-small">Lessons, practice, and feedback are generated by AI. Your profile and progress are saved to your account.</p></aside>
       <form className="teacher-card teacher-form" onSubmit={e => { e.preventDefault(); run('setup', { profile }); }}>
-        <h3>Make this your learning space</h3><div className="teacher-form-grid">{fields.map(([name, label, placeholder, max]) => <label key={name}>{label}<input required maxLength={max} value={profile[name]} placeholder={placeholder} disabled={busy} onChange={e => setProfile(p => ({ ...p, [name]: e.target.value }))} /></label>)}</div>
+        <h3>Make this your learning space</h3>{stage === 'failed' && <p className="teacher-small">We could not build your roadmap automatically, so your study plan is filled in below. Check the details and continue.</p>}<div className="teacher-form-grid">{fields.map(([name, label, placeholder, max]) => <label key={name}>{label}<input required maxLength={max} value={profile[name]} placeholder={placeholder} disabled={busy} onChange={e => setProfile(p => ({ ...p, [name]: e.target.value }))} /></label>)}</div>
         <label>Daily study time <select value={profile.minutes} disabled={busy} onChange={e => setProfile(p => ({ ...p, minutes: Number(e.target.value) }))}>{[10, 15, 25, 30, 45, 60, 90, 120, 180].map(n => <option key={n} value={n}>{n} minutes</option>)}</select></label>
         <label>Syllabus and reference material<textarea required rows={6} maxLength={12000} disabled={busy} value={profile.syllabus} onChange={e => setProfile(p => ({ ...p, syllabus: e.target.value }))} placeholder="Paste the topics you need to cover. Add relevant textbook passages or notes to help the AI teach from your material." /></label>
         <p className="teacher-small">Start with one subject and a manageable group of topics. AI can make mistakes; ask it to explain or revisit an answer that seems wrong.</p>

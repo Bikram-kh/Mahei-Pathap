@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../functions/mahei-ai-teacher/src/main.js';
-import { validateProfile, validateQuiz, validateRoadmap, gradeQuiz, publicState } from '../functions/mahei-ai-teacher/src/learning.js';
+import { validateProfile, validateQuiz, validateRoadmap, validatePlanImport, gradeQuiz, publicState } from '../functions/mahei-ai-teacher/src/learning.js';
 import { ROADMAP_COMPLETION_XP, monthlyStatsRowId } from '../functions/mahei-ai-teacher/src/xp.js';
 import { createHash } from 'node:crypto';
 
@@ -333,4 +333,103 @@ test('a failed XP write never blocks the lesson and leaves the award claimable',
   assert.equal(result.state.roadmapXp.points, 0);
   assert.equal(f.stats.size, 0);
   assert.equal([...f.docs.keys()].some(id => id.startsWith('rmxp')), false);
+});
+
+const planImport = {
+  title: 'Mathematics: from basic to btech level',
+  subject: 'Mathematics',
+  level: 'Basic to B.Tech',
+  goal: 'Build the maths needed for B.Tech',
+  minutes: 60,
+  plan: "TODAY'S STUDY PLAN\n1. Vectors and dimension — 10 min\n2. Matrix basics — 10 min\nTOTAL: 60 minutes",
+};
+const pathRoadmap = {
+  topics: ['Vectors and dimension', 'Matrix basics', 'Linear systems', 'Determinants', 'Eigenvalues', 'Calculus foundations']
+    .map((title, i) => ({ title, objective: `Understand ${title}`, minutes: 10 + i * 5 })),
+};
+
+test('validates and normalises a saved-plan import', () => {
+  const { profile: imported, sourcePlan } = validatePlanImport(planImport);
+  assert.equal(imported.subject, 'Mathematics');
+  assert.equal(imported.language, 'English');
+  assert.equal(imported.minutes, 60);
+  assert.equal(imported.syllabus, planImport.plan);
+  assert.deepEqual(sourcePlan, { title: planImport.title, plan: planImport.plan });
+
+  const sparse = validatePlanImport({ subject: 'Physics', plan: 'Step 1 — forces' });
+  assert.equal(sparse.profile.level, 'Not specified');
+  assert.equal(sparse.profile.minutes, 25);
+  assert.equal(sparse.sourcePlan.title, 'Physics study plan');
+
+  assert.equal(validatePlanImport({ ...planImport, minutes: 5 }).profile.minutes, 10);
+  assert.equal(validatePlanImport({ ...planImport, minutes: 500 }).profile.minutes, 180);
+  assert.equal(validatePlanImport({ ...planImport, minutes: 'soon' }).profile.minutes, 25);
+});
+test('rejects saved-plan imports that are empty, incomplete or oversized', () => {
+  assert.throws(() => validatePlanImport(undefined));
+  assert.throws(() => validatePlanImport({ ...planImport, plan: '   ' }));
+  assert.throws(() => validatePlanImport({ ...planImport, subject: '' }));
+  assert.throws(() => validatePlanImport({ ...planImport, plan: 'x'.repeat(8001) }));
+  assert.throws(() => validatePlanImport({ ...planImport, subject: 'x'.repeat(121) }));
+});
+test('roadmap topics can keep their own minutes from the plan, clamped to a sane range', () => {
+  assert.equal(validateRoadmap(pathRoadmap, 25)[0].minutes, 25);
+  const kept = validateRoadmap(pathRoadmap, 25, { keepMinutes: true });
+  assert.equal(kept[0].minutes, 10);
+  assert.equal(kept[5].minutes, 35);
+  const odd = validateRoadmap({ topics: ['a', 'b', 'c'].map((title, i) => ({ title, objective: 'o', minutes: [1, 999, 'x'][i] })) }, 25, { keepMinutes: true });
+  assert.deepEqual(odd.map(t => t.minutes), [5, 180, 25]);
+});
+test('import_plan builds a roadmap from the saved plan without a diagnostic quiz', async () => {
+  const f = fixture();
+  f.replies.push(pathRoadmap);
+  const result = await f.invoke({ action: 'import_plan', plan: planImport });
+  assert.equal(result.status, 200);
+  assert.equal(result.state.quiz, null);
+  assert.equal(result.state.roadmap.length, 6);
+  assert.equal(result.state.currentTopicId, 'topic1');
+  assert.equal(result.state.roadmap[0].minutes, 10);
+  assert.equal(result.state.profile.subject, 'Mathematics');
+  assert.equal(f.calls.length, 1, 'one AI call, no quiz generation or review');
+  assert.match(f.calls[0].messages[1].content, /Vectors and dimension/);
+});
+test('lessons after an import can see the plan the roadmap was built from', async () => {
+  const f = fixture();
+  f.replies.push(pathRoadmap);
+  const imported = await f.invoke({ action: 'import_plan', plan: planImport });
+  f.replies.push('### The idea\nA vector has direction and size.');
+  const chat = await f.invoke({ action: 'chat', revision: imported.state.revision, message: 'Start the first lesson from my roadmap.' });
+  assert.equal(chat.status, 200);
+  const context = JSON.parse(f.calls.at(-1).messages[1].content);
+  assert.equal(context.sourcePlan.title, planImport.title);
+  assert.match(context.sourcePlan.plan, /Matrix basics/);
+});
+test('retrying an import with the same request id does not repeat the AI call', async () => {
+  const f = fixture();
+  f.replies.push(pathRoadmap);
+  const first = await f.invoke({ action: 'import_plan', plan: planImport, requestId: 'import-plan-0001' });
+  const retry = await f.invoke({ action: 'import_plan', plan: planImport, requestId: 'import-plan-0001', revision: 0 });
+  assert.equal(first.status, 200);
+  assert.equal(retry.status, 200);
+  assert.equal(f.calls.length, 1);
+  assert.equal(retry.state.roadmap.length, 6);
+});
+test('import_plan will not replace an existing learning profile', async () => {
+  const f = fixture();
+  await startLesson(f);
+  const calls = f.calls.length;
+  f.replies.push(pathRoadmap);
+  const result = await f.invoke({ action: 'import_plan', revision: 2, plan: planImport });
+  assert.equal(result.status, 409);
+  assert.equal(f.calls.length, calls);
+});
+test('an invalid import is refused before any AI call, and imports stay private to the user', async () => {
+  const f = fixture();
+  const refused = await f.invoke({ action: 'import_plan', plan: { ...planImport, plan: '' } });
+  assert.equal(refused.status, 400);
+  assert.equal(f.calls.length, 0);
+
+  f.replies.push(pathRoadmap);
+  await f.invoke({ action: 'import_plan', plan: planImport });
+  assert.equal((await f.invoke({ action: 'load' }, 'student-b')).state, null);
 });
