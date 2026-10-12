@@ -41,11 +41,11 @@ import {
   Pencil,
   ShoppingBag,
   Users,
-  Sprout,
 } from "lucide-react";
 
 import { groupNavigation } from "./lib/navGroups.js";
 import LandingPage from "./components/LandingPage.jsx";
+import BrandMark from "./components/BrandMark.jsx";
 import AssistantLauncher from "./components/AssistantLauncher.jsx";
 import {
   ASSISTANT_QUICK_PROMPTS,
@@ -3177,7 +3177,7 @@ export default function App() {
         </button>
 
         <div className="brand-small">
-          <span className="brand-logo"><Sprout size={18} aria-hidden="true" /></span>
+          <span className="brand-logo"><BrandMark size={32} /></span>
           <strong>Mahei-Pathap</strong>
         </div>
 
@@ -3191,7 +3191,7 @@ export default function App() {
       <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
         <div>
           <div className="brand">
-            <div className="brand-logo"><Sprout size={22} aria-hidden="true" /></div>
+            <div className="brand-logo"><BrandMark size={48} /></div>
 
             <div>
               <h1>Mahei-Pathap</h1>
@@ -5986,7 +5986,7 @@ function LoginPage({
         )}
 
         <div className="brand login-brand">
-          <div className="brand-logo"><Sprout size={22} aria-hidden="true" /></div>
+          <div className="brand-logo"><BrandMark size={48} /></div>
 
           <div>
             <h1>Mahei-Pathap</h1>
