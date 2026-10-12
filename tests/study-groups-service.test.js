@@ -448,3 +448,147 @@ test('non-members cannot join a call', async () => {
   await h.call('owner', 'startCall', { groupId });
   await assert.rejects(h.call('eve', 'joinCall', { groupId }), status(404));
 });
+
+/* ---------- leaving and deleting a group ---------- */
+
+const rowsFor = (h, groupId) => ['groups', 'members', 'messages', 'invites', 'notes', 'calls']
+  .flatMap((name) => [...(h.db.tables.get(name)?.values() ?? [])])
+  .filter((doc) => doc.groupId === groupId || doc.$id === groupId);
+
+// A group with a chat history, a collaborative note, a PDF, a pending invitation and a live call.
+async function busyGroup(h) {
+  const groupId = await groupWithMembers(h, ['ann', 'bob']);
+  await h.call('ann', 'sendMessage', { groupId, body: 'Hello' });
+  await h.call('owner', 'createNote', { groupId, title: 'Shared' });
+  const ticket = await h.call('ann', 'preparePdf', { groupId, title: 'Past paper', fileName: 'paper.pdf', size: 2048 });
+  uploadFor(h, ticket);
+  await h.call('ann', 'finalizePdf', { groupId, noteId: ticket.note.$id });
+  const { token } = await h.call('owner', 'createInvite', { groupId });
+  await h.call('owner', 'startCall', { groupId });
+  return { groupId, token, fileId: ticket.fileId };
+}
+
+test('a member who leaves loses access while the group carries on for everyone else', async () => {
+  const h = harness();
+  const groupId = await groupWithMembers(h, ['ann', 'bob']);
+  await h.call('ann', 'sendMessage', { groupId, body: 'Before I go' });
+  await h.call('ann', 'leaveGroup', { groupId });
+
+  await assert.rejects(h.call('ann', 'getGroup', { groupId }), status(404));
+  await assert.rejects(h.call('ann', 'sendMessage', { groupId, body: 'Still here?' }), status(404));
+  const { group, members } = await h.call('bob', 'getGroup', { groupId });
+  assert.equal(group.memberCount, 2);
+  assert.deepEqual(members.map((m) => m.userId).sort(), ['bob', 'owner']);
+  assert.deepEqual((await h.call('bob', 'listMessages', { groupId })).messages.map((m) => m.body), ['Before I go']);
+});
+
+test('the owner is told to transfer ownership or delete the group instead of leaving it', async () => {
+  const h = harness();
+  const groupId = await groupWithMembers(h, ['ann']);
+  await assert.rejects(
+    h.call('owner', 'leaveGroup', { groupId }),
+    (error) => error.status === 409 && /transfer ownership or delete the group/i.test(error.message),
+  );
+});
+
+test('the owner can delete a group and everything stored for it', async () => {
+  const h = harness();
+  const { groupId, token, fileId } = await busyGroup(h);
+  assert.ok(rowsFor(h, groupId).length > 0);
+
+  assert.deepEqual(await h.call('owner', 'deleteGroup', { groupId }), {});
+
+  assert.deepEqual(rowsFor(h, groupId), []);
+  assert.equal(h.db.teams.has(groupId), false, 'the team is gone, so nobody keeps read access');
+  assert.equal(h.providers.rooms.size, 0, 'collaboration rooms are deleted');
+  assert.equal(h.providers.calls.size, 0, 'the video room is closed');
+  assert.equal(h.db.files.has(fileId), false, 'uploaded PDFs are deleted');
+  for (const userId of ['owner', 'ann', 'bob']) {
+    assert.deepEqual((await h.call(userId, 'listGroups')).groups, []);
+    await assert.rejects(h.call(userId, 'getGroup', { groupId }), status(404));
+  }
+  await assert.rejects(h.call('eve', 'previewInvite', { token }), status(404));
+});
+
+test('only the owner can delete a group, and a failed attempt changes nothing', async () => {
+  const h = harness();
+  const groupId = await groupWithMembers(h, ['ann']);
+  await assert.rejects(h.call('ann', 'deleteGroup', { groupId }), status(403));
+  await assert.rejects(h.call('eve', 'deleteGroup', { groupId }), status(404));
+  await assert.rejects(h.call('owner', 'deleteGroup', { groupId: 'does-not-exist' }), status(404));
+  const { group, members } = await h.call('owner', 'getGroup', { groupId });
+  assert.equal(group.$id, groupId);
+  assert.equal(members.length, 2);
+});
+
+test('an archived group can still be deleted', async () => {
+  const h = harness();
+  const { groupId } = await busyGroup(h);
+  await h.call('owner', 'archiveGroup', { groupId });
+  await h.call('owner', 'deleteGroup', { groupId });
+  assert.deepEqual(rowsFor(h, groupId), []);
+  assert.equal(h.providers.rooms.size, 0);
+});
+
+test('deleting a group does not touch the owner\'s other groups', async () => {
+  const h = harness();
+  const doomed = await groupWithMembers(h, ['ann']);
+  const { group: other } = await h.call('owner', 'createGroup', { name: 'Physics crew' });
+  await h.call('owner', 'sendMessage', { groupId: other.$id, body: 'Keep me' });
+  await h.call('owner', 'createNote', { groupId: other.$id, title: 'Keep me too' });
+  await h.call('owner', 'createNote', { groupId: doomed, title: 'Goes away' });
+  assert.equal(h.providers.rooms.size, 2);
+
+  await h.call('owner', 'deleteGroup', { groupId: doomed });
+
+  assert.deepEqual((await h.call('owner', 'listGroups')).groups.map((g) => g.$id), [other.$id]);
+  // The second message is the system announcement that sharing the note posted into this group's chat.
+  assert.deepEqual(
+    (await h.call('owner', 'listMessages', { groupId: other.$id })).messages.map((m) => m.body),
+    ['Keep me', 'Olivia Owner shared a note: Keep me too'],
+  );
+  assert.equal((await h.call('owner', 'getGroup', { groupId: other.$id })).notes.length, 1);
+  assert.equal(h.providers.rooms.size, 1);
+  assert.ok(h.db.teams.has(other.$id));
+});
+
+test('a long chat history is deleted across several pages', async () => {
+  const h = harness();
+  const groupId = await groupWithMembers(h, ['ann']);
+  const stored = 250;
+  for (let i = 0; i < stored; i += 1) {
+    await h.db.create('messages', `m${i}`, { groupId, userId: 'ann', senderName: 'Ann', body: `m${i}`, type: 'message', createdAt: `2026-01-02T00:00:${String(i % 60).padStart(2, '0')}.000Z` });
+  }
+  assert.equal(h.db.tables.get('messages').size, stored);
+  await h.call('owner', 'deleteGroup', { groupId });
+  assert.equal(h.db.tables.get('messages').size, 0);
+});
+
+test('if a provider fails the group stays usable and deleting can simply be retried', async () => {
+  const h = harness();
+  const { groupId } = await busyGroup(h);
+  const deleteNote = h.providers.deleteNote;
+  let outage = true;
+  h.providers.deleteNote = async (roomId) => {
+    if (outage) throw Object.assign(new Error('Liveblocks is unavailable'), { status: 503 });
+    return deleteNote(roomId);
+  };
+
+  await assert.rejects(h.call('owner', 'deleteGroup', { groupId }), status(503));
+  assert.ok(h.db.teams.get(groupId).members.has('ann'), 'nobody lost access because of a half finished delete');
+  assert.equal((await h.call('ann', 'getGroup', { groupId })).group.$id, groupId);
+
+  outage = false;
+  await h.call('owner', 'deleteGroup', { groupId });
+  assert.deepEqual(rowsFor(h, groupId), []);
+  assert.equal(h.providers.rooms.size, 0);
+});
+
+test('a collaboration room that is already gone does not block deleting the group', async () => {
+  const h = harness();
+  const groupId = await groupWithMembers(h, []);
+  await h.call('owner', 'createNote', { groupId, title: 'Shared' });
+  h.providers.deleteNote = async () => { throw Object.assign(new Error('Room not found'), { status: 404 }); };
+  await h.call('owner', 'deleteGroup', { groupId });
+  assert.deepEqual(rowsFor(h, groupId), []);
+});

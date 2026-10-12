@@ -1,0 +1,325 @@
+/* Floating Mahei Assistance launcher. Classes are prefixed asst- to avoid collisions.
+   Stacking: below the mobile sidebar drawer and modals (100+), above page chrome (<= 60). */
+
+.asst-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 90;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--cream);
+  box-shadow: 0 2px 4px rgba(34, 48, 43, 0.15), 0 12px 28px rgba(31, 92, 74, 0.32);
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.asst-fab:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+}
+
+.asst-dot {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--cream);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.asst-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  z-index: 95;
+  width: 380px;
+  height: min(560px, calc(100dvh - 116px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--white);
+  box-shadow: 0 2px 4px rgba(34, 48, 43, 0.06), 0 24px 48px rgba(34, 48, 43, 0.16);
+  animation: asst-in 0.18s ease-out;
+}
+
+@keyframes asst-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.asst-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.asst-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--brown);
+  font-size: 16px;
+}
+
+.asst-title-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--primary-tint);
+  color: var(--primary);
+}
+
+.asst-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.asst-icon-button,
+.asst-text-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+}
+
+.asst-icon-button {
+  width: 44px;
+}
+
+.asst-text-button {
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.asst-icon-button:hover,
+.asst-text-button:hover {
+  background: var(--sand);
+  color: var(--brown);
+}
+
+.asst-body {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.asst-empty {
+  display: grid;
+  gap: 12px;
+}
+
+.asst-empty p {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.asst-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.asst-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.asst-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.asst-chip:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.asst-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.asst-bubble {
+  max-width: 92%;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.asst-bubble-user {
+  align-self: flex-end;
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--primary);
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.asst-bubble-reply {
+  align-self: flex-start;
+  padding: 12px 14px;
+  border-radius: 4px 16px 16px 16px;
+  background: var(--sand);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.asst-thinking {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.asst-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.asst-footer {
+  display: grid;
+  gap: 6px;
+  padding: 12px 16px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.asst-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.asst-composer textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--white);
+  color: var(--brown);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.asst-send {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: #fff;
+}
+
+.asst-send:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.asst-send:disabled {
+  background: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.asst-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.asst-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Mobile: the button clears the fixed bottom tab bar, and the panel becomes a bottom sheet. */
+@media (max-width: 768px) {
+  .asst-fab {
+    right: 16px;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px) + 16px);
+  }
+
+  /* The sheet has its own close control and would otherwise sit under the button. */
+  .asst-fab[aria-expanded="true"] {
+    display: none;
+  }
+
+  .asst-panel {
+    right: 0;
+    left: 0;
+    bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    height: auto;
+    max-height: 70dvh;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .asst-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asst-panel {
+    animation: none;
+  }
+
+  .asst-fab {
+    transition: none;
+  }
+}

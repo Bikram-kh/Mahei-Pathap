@@ -41,8 +41,18 @@ import {
   Pencil,
   ShoppingBag,
   Users,
+  Sprout,
 } from "lucide-react";
 
+import { groupNavigation } from "./lib/navGroups.js";
+import LandingPage from "./components/LandingPage.jsx";
+import AssistantLauncher from "./components/AssistantLauncher.jsx";
+import {
+  ASSISTANT_QUICK_PROMPTS,
+  pageForAgentAction,
+  shouldShowAssistantLauncher,
+} from "./lib/assistantLauncher.js";
+import { buildPlanHandoff, sortPlansNewestFirst } from "./lib/studyPlanHandoff.js";
 import {
   account,
   functions,
@@ -581,6 +591,12 @@ export default function App() {
   const [reviewStatus, setReviewStatus] = useState("");
   const [skillStatus, setSkillStatus] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  // Visitors arriving from an invite or an email-verification link go straight to sign-in.
+  const [showLanding, setShowLanding] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !groupInvitation && !params.has("userId") && !params.has("authError");
+  });
   const [authUser, setAuthUser] = useState(null);
   const [requestedGroupId, setRequestedGroupId] = useState("");
   const [groupView, setGroupView] = useState({ groupId: "", tab: "" });
@@ -607,6 +623,8 @@ export default function App() {
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
   const [studyPlanError, setStudyPlanError] = useState("");
   const [studyPlanTaskStatus, setStudyPlanTaskStatus] = useState("");
+  const [studyPlanTaskId, setStudyPlanTaskId] = useState(null);
+  const [teacherHandoff, setTeacherHandoff] = useState(null);
   const [studyPlanGoalStatus, setStudyPlanGoalStatus] = useState("");
   const [planInterviewActive, setPlanInterviewActive] = useState(false);
   const [planInterviewStep, setPlanInterviewStep] = useState(0);
@@ -718,6 +736,10 @@ export default function App() {
 
       if (agentResult.success && agentResult.action !== "none") {
         setAiReply(agentResult.reply || "Action completed successfully.");
+
+        // Some results are only rendered on the full assistant page (e.g. the study-plan interview).
+        const resultPage = pageForAgentAction(agentResult.action);
+        if (resultPage) navigate(resultPage);
         return;
       }
 
@@ -892,6 +914,7 @@ export default function App() {
       }
 
       setTasks((items) => [savedTask, ...items]);
+      setStudyPlanTaskId(savedTask.id);
       setStudyPlanTaskStatus("saved");
 
       setAiReply("Today's study plan has been added to your Tasks.");
@@ -1271,13 +1294,14 @@ export default function App() {
 
   const teacherStudyPlans = useMemo(
     () =>
-      tasks
-        .filter(
+      sortPlansNewestFirst(
+        tasks.filter(
           (task) =>
             task.category === "AI Study Plan" ||
             task.title === "Today's AI Study Plan" ||
             String(task.notes || "").startsWith("AI TEACHER STUDY PLAN"),
-        )
+        ),
+      )
         .slice(0, 3)
         .map(({ id, title, deadline, estTime, notes, status }) => ({
           id,
@@ -1884,6 +1908,9 @@ export default function App() {
       })
       .catch(() => {
         setIsAuthenticated(false);
+      })
+      .finally(() => {
+        setSessionChecked(true);
       });
   }, []);
 
@@ -2200,6 +2227,16 @@ export default function App() {
     const url = new URL(window.location.href);
     url.searchParams.delete("groupInvite");
     window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
+
+  // Opening AI Teacher from a saved plan hands the plan over so the teacher builds a roadmap from it
+  // instead of asking the student to fill in the setup form.
+  function openAiTeacherWithPlan() {
+    const savedTask = tasks.find((task) => task.id === studyPlanTaskId);
+    setTeacherHandoff(
+      buildPlanHandoff({ task: savedTask, context: studyPlanContext, planText: studyPlan }),
+    );
+    navigate("ai-teacher");
   }
 
   function navigate(page) {
@@ -3088,8 +3125,27 @@ export default function App() {
   ========================================================= */
 
   if (!isAuthenticated) {
+    if (!sessionChecked) {
+      return <div className="login-shell" role="status" aria-label="Loading" />;
+    }
+
+    if (showLanding) {
+      const openAuth = (mode) => {
+        setAuthMode(mode);
+        setShowLanding(false);
+      };
+
+      return (
+        <LandingPage
+          onLogin={() => openAuth("login")}
+          onSignup={() => openAuth("signup")}
+        />
+      );
+    }
+
     return (
       <LoginPage
+        onBackToHome={() => setShowLanding(true)}
         pendingGroupInvitation={Boolean(groupInvitation)}
         authMode={authMode}
         setAuthMode={setAuthMode}
@@ -3121,7 +3177,7 @@ export default function App() {
         </button>
 
         <div className="brand-small">
-          <span className="brand-logo">🌱</span>
+          <span className="brand-logo"><Sprout size={18} aria-hidden="true" /></span>
           <strong>Mahei-Pathap</strong>
         </div>
 
@@ -3135,7 +3191,7 @@ export default function App() {
       <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
         <div>
           <div className="brand">
-            <div className="brand-logo">🌱</div>
+            <div className="brand-logo"><Sprout size={22} aria-hidden="true" /></div>
 
             <div>
               <h1>Mahei-Pathap</h1>
@@ -3150,29 +3206,36 @@ export default function App() {
             </button>
           </div>
 
-          <nav className="navigation">
-            {navigation.map((item) => {
-              const Icon = item.icon;
+          <nav className="navigation" aria-label="Main">
+            {groupNavigation(navigation).map((group) => (
+              <div className="nav-group" key={group.title}>
+                <div className="nav-group-label">{group.title}</div>
 
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => navigate(item.id)}
-                  className={`nav-item ${
-                    activePage === item.id ? "active" : ""
-                  }`}
-                >
-                  <Icon size={19} />
-                  <span>{item.label}</span>
-                  {item.unread > 0 && (
-                    <span className="nav-unread-badge">
-                      <span aria-hidden="true">{item.unread > 99 ? "99+" : item.unread}</span>
-                      <span className="sr-only">{item.unread} unread group messages</span>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => navigate(item.id)}
+                      aria-current={activePage === item.id ? "page" : undefined}
+                      className={`nav-item ${
+                        activePage === item.id ? "active" : ""
+                      }`}
+                    >
+                      <Icon size={19} />
+                      <span>{item.label}</span>
+                      {item.unread > 0 && (
+                        <span className="nav-unread-badge">
+                          <span aria-hidden="true">{item.unread > 99 ? "99+" : item.unread}</span>
+                          <span className="sr-only">{item.unread} unread group messages</span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </div>
 
@@ -3266,6 +3329,8 @@ export default function App() {
               key={authUser.$id}
               userId={authUser.$id}
               studyPlans={teacherStudyPlans}
+              planHandoff={teacherHandoff}
+              onPlanHandoffConsumed={() => setTeacherHandoff(null)}
             />
           )}
 
@@ -3297,7 +3362,7 @@ export default function App() {
                         fontSize: "12px",
                         fontWeight: 700,
                         letterSpacing: "0.08em",
-                        color: "#c96b32",
+                        color: "var(--orange)",
                         marginBottom: "8px",
                       }}
                     >
@@ -3310,7 +3375,7 @@ export default function App() {
                         margin: 0,
                         fontSize: "30px",
                         lineHeight: 1.2,
-                        color: "#302820",
+                        color: "var(--brown)",
                       }}
                     >
                       Study smarter with Mahei.
@@ -3319,7 +3384,7 @@ export default function App() {
                     <p
                       style={{
                         margin: "10px 0 0",
-                        color: "#766b61",
+                        color: "var(--muted)",
                         fontSize: "15px",
                         lineHeight: 1.6,
                       }}
@@ -3334,9 +3399,9 @@ export default function App() {
                       type="button"
                       onClick={clearAiCoach}
                       style={{
-                        border: "1px solid #ded5cc",
-                        background: "#fffaf5",
-                        color: "#554940",
+                        border: "1px solid var(--border)",
+                        background: "var(--white)",
+                        color: "var(--muted)",
                         borderRadius: "10px",
                         padding: "9px 14px",
                         fontSize: "13px",
@@ -3364,8 +3429,8 @@ export default function App() {
                       <div
                         style={{
                           maxWidth: "75%",
-                          background: "#302820",
-                          color: "#fff",
+                          background: "var(--brown)",
+                          color: "var(--white)",
                           borderRadius: "18px 18px 5px 18px",
                           padding: "13px 16px",
                           fontSize: "14px",
@@ -3391,11 +3456,11 @@ export default function App() {
                             height: "36px",
                             minWidth: "36px",
                             borderRadius: "12px",
-                            background: "#f7e6d8",
+                            background: "rgba(31, 92, 74, 0.15)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            color: "#c96b32",
+                            color: "var(--orange)",
                           }}
                         >
                           <Sparkles size={18} />
@@ -3404,18 +3469,18 @@ export default function App() {
                         <div
                           style={{
                             flex: 1,
-                            background: "#fff",
-                            border: "1px solid #eadfd5",
+                            background: "var(--white)",
+                            border: "1px solid var(--border)",
                             borderRadius: "5px 18px 18px 18px",
                             padding: "18px 20px",
-                            boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                            boxShadow: "var(--shadow)",
                           }}
                         >
                           <div
                             style={{
                               fontSize: "12px",
                               fontWeight: 700,
-                              color: "#c96b32",
+                              color: "var(--orange)",
                               marginBottom: "9px",
                               textTransform: "uppercase",
                               letterSpacing: "0.05em",
@@ -3429,7 +3494,7 @@ export default function App() {
                               whiteSpace: "pre-wrap",
                               fontSize: "15px",
                               lineHeight: 1.75,
-                              color: "#40362f",
+                              color: "var(--text)",
                             }}
                           >
                             <AiResponse>{aiReply}</AiResponse>
@@ -3445,10 +3510,10 @@ export default function App() {
                   style={{
                     marginBottom: "24px",
                     padding: "20px",
-                    background: "#fff",
-                    border: "1px solid #eadfd5",
+                    background: "var(--white)",
+                    border: "1px solid var(--border)",
                     borderRadius: "18px",
-                    boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                    boxShadow: "var(--shadow)",
                   }}
                 >
                   <div
@@ -3465,7 +3530,7 @@ export default function App() {
                         style={{
                           fontSize: "12px",
                           fontWeight: 700,
-                          color: "#c96b32",
+                          color: "var(--orange)",
                           marginBottom: "6px",
                           textTransform: "uppercase",
                         }}
@@ -3476,7 +3541,7 @@ export default function App() {
                       <div
                         style={{
                           fontSize: "14px",
-                          color: "#6d6056",
+                          color: "var(--muted)",
                           lineHeight: 1.5,
                         }}
                       >
@@ -3512,11 +3577,11 @@ export default function App() {
                 {/* Input Card */}
                 {!planInterviewActive && <div
                   style={{
-                    background: "#fff",
-                    border: "1px solid #eadfd5",
+                    background: "var(--white)",
+                    border: "1px solid var(--border)",
                     borderRadius: "20px",
                     padding: "22px",
-                    boxShadow: "0 8px 30px rgba(68, 48, 32, 0.06)",
+                    boxShadow: "var(--shadow)",
                   }}
                 >
                   <label
@@ -3525,7 +3590,7 @@ export default function App() {
                       display: "block",
                       fontSize: "14px",
                       fontWeight: 700,
-                      color: "#44382f",
+                      color: "var(--brown)",
                       marginBottom: "10px",
                     }}
                   >
@@ -3545,14 +3610,13 @@ export default function App() {
                       minHeight: "130px",
                       boxSizing: "border-box",
                       resize: "vertical",
-                      border: "1px solid #ded4ca",
+                      border: "1px solid var(--border-strong)",
                       borderRadius: "14px",
                       padding: "16px",
                       fontSize: "15px",
                       lineHeight: 1.6,
-                      color: "#302820",
-                      background: "#fffdfb",
-                      outline: "none",
+                      color: "var(--brown)",
+                      background: "var(--cream)",
                       fontFamily: "inherit",
                     }}
                   />
@@ -3571,7 +3635,7 @@ export default function App() {
                     <span
                       style={{
                         fontSize: "12px",
-                        color: "#9a8d82",
+                        color: "var(--muted)",
                       }}
                     >
                       Press Ctrl + Enter to ask
@@ -3608,7 +3672,7 @@ export default function App() {
                       style={{
                         fontSize: "12px",
                         fontWeight: 700,
-                        color: "#8b7d72",
+                        color: "var(--muted)",
                         marginBottom: "10px",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
@@ -3624,13 +3688,7 @@ export default function App() {
                         gap: "9px",
                       }}
                     >
-                      {[
-                        "What should I study today?",
-                        "Create a task to revise maths today",
-                        "Add a calendar event for my exam tomorrow",
-                        "Open my AI Teacher lesson",
-                        "Prepare a focus session for algebra",
-                      ].map((prompt) => (
+                      {ASSISTANT_QUICK_PROMPTS.map((prompt) => (
                         <button
                           key={prompt}
                           type="button"
@@ -3647,9 +3705,9 @@ export default function App() {
                           }}
                           disabled={aiLoading}
                           style={{
-                            border: "1px solid #e4d9cf",
-                            background: "#fffaf5",
-                            color: "#594c42",
+                            border: "1px solid var(--border)",
+                            background: "var(--white)",
+                            color: "var(--muted)",
                             borderRadius: "999px",
                             padding: "8px 13px",
                             fontSize: "12px",
@@ -3802,17 +3860,17 @@ export default function App() {
                     style={{
                       marginBottom: "24px",
                       padding: "22px",
-                      background: "#fff",
-                      border: "1px solid #eadfd5",
+                      background: "var(--white)",
+                      border: "1px solid var(--border)",
                       borderRadius: "18px",
-                      boxShadow: "0 6px 24px rgba(68, 48, 32, 0.05)",
+                      boxShadow: "var(--shadow)",
                     }}
                   >
                     <div
                       style={{
                         fontSize: "12px",
                         fontWeight: 700,
-                        color: "#c96b32",
+                        color: "var(--orange)",
                         marginBottom: "10px",
                         textTransform: "uppercase",
                         letterSpacing: "0.05em",
@@ -3825,11 +3883,11 @@ export default function App() {
                         style={{
                           marginBottom: "16px",
                           padding: "12px 14px",
-                          background: "#fff7ed",
+                          background: "rgba(31, 92, 74, 0.1)",
                           borderRadius: "12px",
                           fontSize: "14px",
                           lineHeight: 1.5,
-                          color: "#40362f",
+                          color: "var(--text)",
                         }}
                       >
                         <AiResponse>{aiReply}</AiResponse>
@@ -3841,7 +3899,7 @@ export default function App() {
                         whiteSpace: "pre-wrap",
                         fontSize: "15px",
                         lineHeight: 1.75,
-                        color: "#40362f",
+                        color: "var(--text)",
                       }}
                     >
                       <AiResponse>{studyPlan}</AiResponse>
@@ -3860,8 +3918,8 @@ export default function App() {
                         disabled={studyPlanTaskStatus === "saving" || studyPlanTaskStatus === "saved"}
                         style={{
                           border: "none",
-                          background: "#9b6a4c",
-                          color: "#ffffff",
+                          background: "var(--orange)",
+                          color: "var(--white)",
                           borderRadius: "10px",
                           padding: "11px 16px",
                           fontSize: "13px",
@@ -3882,9 +3940,9 @@ export default function App() {
                         onClick={handleCreateStudyGoal}
                         disabled={studyPlanGoalStatus === "saving" || studyPlanGoalStatus === "saved"}
                         style={{
-                          border: "1px solid #9b6a4c",
-                          background: "#ffffff",
-                          color: "#9b6a4c",
+                          border: "1px solid var(--orange)",
+                          background: "var(--white)",
+                          color: "var(--orange)",
                           borderRadius: "10px",
                           padding: "11px 16px",
                           fontSize: "13px",
@@ -3913,7 +3971,7 @@ export default function App() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => navigate("ai-teacher")}
+                        onClick={openAiTeacherWithPlan}
                         disabled={studyPlanTaskStatus !== "saved"}
                       >
                         <GraduationCap size={16} />
@@ -3931,9 +3989,9 @@ export default function App() {
                       marginTop: "16px",
                       padding: "13px 15px",
                       borderRadius: "12px",
-                      border: "1px solid #efd0c7",
-                      background: "#fff5f2",
-                      color: "#a34b3c",
+                      border: "1px solid rgba(239,71,111,0.3)",
+                      background: "rgba(239,71,111,0.1)",
+                      color: "var(--coral)",
                       fontSize: "14px",
                     }}
                   >
@@ -3947,13 +4005,13 @@ export default function App() {
                     style={{
                       marginTop: "24px",
                       padding: "22px",
-                      background: "#fff",
-                      border: "1px solid #eadfd5",
+                      background: "var(--white)",
+                      border: "1px solid var(--border)",
                       borderRadius: "18px",
                       display: "flex",
                       alignItems: "center",
                       gap: "12px",
-                      color: "#6d6056",
+                      color: "var(--muted)",
                     }}
                   >
                     <Sparkles size={18} />
@@ -3967,7 +4025,7 @@ export default function App() {
                     style={{
                       textAlign: "center",
                       padding: "42px 20px",
-                      color: "#8c7f74",
+                      color: "var(--muted)",
                     }}
                   >
                     <div
@@ -3976,8 +4034,8 @@ export default function App() {
                         height: "52px",
                         margin: "0 auto 14px",
                         borderRadius: "16px",
-                        background: "#f8e9dc",
-                        color: "#c96b32",
+                        background: "rgba(31, 92, 74, 0.15)",
+                        color: "var(--orange)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -3989,7 +4047,7 @@ export default function App() {
                     <h4
                       style={{
                         margin: "0 0 7px",
-                        color: "#51453c",
+                        color: "var(--brown)",
                         fontSize: "16px",
                       }}
                     >
@@ -4240,6 +4298,42 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Mobile bottom tab bar */}
+      <div className="bottom-tab-bar">
+        {[
+          { id: "dashboard",  icon: <LayoutDashboard size={20} />, label: "Home" },
+          { id: "notes",      icon: <BookOpen size={20} />,        label: "Notes" },
+          { id: "ai-teacher", icon: <Sparkles size={20} />,        label: "AI Tutor" },
+          { id: "profile",    icon: <User size={20} />,            label: "Profile" },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            className={`bottom-tab-btn ${activePage === tab.id ? "active" : ""}`}
+            onClick={() => navigate(tab.id)}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {shouldShowAssistantLauncher({ isAuthenticated, activePage }) && (
+        <AssistantLauncher
+          message={aiMessage}
+          reply={aiReply}
+          submittedMessage={aiSubmittedMessage}
+          loading={aiLoading}
+          error={aiError}
+          quickPrompts={ASSISTANT_QUICK_PROMPTS}
+          onMessageChange={setAiMessage}
+          onSend={handleAiCoach}
+          onKeyDown={handleAiKeyDown}
+          onQuickPrompt={handleQuickPrompt}
+          onClear={clearAiCoach}
+          onOpenFullPage={() => navigate("ai-coach")}
+        />
+      )}
     </div>
   );
 }
@@ -4266,8 +4360,6 @@ function Dashboard({
   return (
     <div className="page-stack">
       <section className="welcome-card">
-        <div className="welcome-decoration">✨</div>
-
         <div className="welcome-content">
           <span className="date-pill">
             {new Date().toLocaleDateString(undefined, {
@@ -4284,7 +4376,7 @@ function Dashboard({
           <p>
             You have <strong>{pending.length} tasks</strong> waiting and{" "}
             <strong>{assignments.length} assignments</strong> on your radar.
-            Keep going—you&apos;re doing great! 🌱
+            Keep going, you&apos;re doing great.
           </p>
 
           <div className="welcome-buttons">
@@ -4308,7 +4400,7 @@ function Dashboard({
 
       <section className="stat-grid">
         <StatCard
-          icon="📝"
+          icon={<CheckSquare size={22} aria-hidden="true" />}
           title="Completed Tasks"
           value={completedTasks}
           extra={`/ ${tasks.length}`}
@@ -4316,7 +4408,7 @@ function Dashboard({
         />
 
         <StatCard
-          icon="⏱️"
+          icon={<Clock3 size={22} aria-hidden="true" />}
           title="Focus Time"
           value={focusMinutes}
           extra="mins"
@@ -4324,7 +4416,7 @@ function Dashboard({
         />
 
         <StatCard
-          icon="🎓"
+          icon={<GraduationCap size={22} aria-hidden="true" />}
           title="Videos Watched"
           value={watchedVideos}
           extra="videos"
@@ -4332,7 +4424,7 @@ function Dashboard({
         />
 
         <StatCard
-          icon="🔥"
+          icon={<Flame size={22} aria-hidden="true" />}
           title="Productivity"
           value={productivity}
           extra="%"
@@ -4502,7 +4594,7 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(64, 54, 47, 0.45)",
+            background: "rgba(46, 65, 56, 0.45)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -4517,9 +4609,9 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
               maxHeight: "80vh",
               overflowY: "auto",
               background: "#fffdf9",
-              border: "1px solid #e4d9cf",
+              border: "1px solid #e4dccf",
               borderRadius: "18px",
-              boxShadow: "0 20px 50px rgba(64, 54, 47, 0.18)",
+              boxShadow: "0 20px 50px rgba(46, 65, 56, 0.18)",
               padding: "24px",
             }}
           >
@@ -4536,7 +4628,7 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
                   style={{
                     fontSize: "12px",
                     fontWeight: 700,
-                    color: "#9b6a4c",
+                    color: "#5a6861",
                     textTransform: "uppercase",
                     letterSpacing: "0.05em",
                     marginBottom: "8px",
@@ -4548,7 +4640,7 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
                 <h2
                   style={{
                     margin: 0,
-                    color: "#40362f",
+                    color: "#2e4138",
                     fontSize: "24px",
                   }}
                 >
@@ -4561,8 +4653,8 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
                 onClick={() => setSelectedTask(null)}
                 style={{
                   border: "none",
-                  background: "#f3ebe4",
-                  color: "#40362f",
+                  background: "#f3eee4",
+                  color: "#2e4138",
                   width: "36px",
                   height: "36px",
                   borderRadius: "50%",
@@ -4594,9 +4686,9 @@ function TasksPage({ tasks, addTask, toggleTask, deleteTask }) {
               style={{
                 marginTop: "22px",
                 padding: "18px",
-                background: "#f7f0e8",
+                background: "var(--white)",
                 borderRadius: "14px",
-                color: "#40362f",
+                color: "var(--text)",
                 fontSize: "15px",
                 lineHeight: 1.7,
                 whiteSpace: "pre-wrap",
@@ -5595,28 +5687,28 @@ function AnalyticsPage({
 
       <section className="stat-grid">
         <StatCard
-          icon="✅"
+          icon={<CheckSquare size={22} aria-hidden="true" />}
           title="Tasks Completed"
           value={completedTasks}
           color="orange"
         />
 
         <StatCard
-          icon="⏱️"
+          icon={<Clock3 size={22} aria-hidden="true" />}
           title="Focus Minutes"
           value={focusMinutes}
           color="blue"
         />
 
         <StatCard
-          icon="🎥"
+          icon={<Play size={22} aria-hidden="true" />}
           title="Videos Watched"
           value={watchedVideos}
           color="purple"
         />
 
         <StatCard
-          icon="🎯"
+          icon={<Target size={22} aria-hidden="true" />}
           title="Goal Progress"
           value={averageGoalProgress}
           extra="%"
@@ -5789,7 +5881,8 @@ function SectionHeader({ title, icon, action, onAction, color }) {
       <div className="section-title">
         <span className={`section-dot ${color}`} />
         <h3>
-          {icon} {title}
+          {/* Emoji strings are decorative and clash with the icon set, so only element icons render. */}
+          {typeof icon === "string" ? null : icon} {title}
         </h3>
       </div>
 
@@ -5867,6 +5960,7 @@ function EmptyState({ text }) {
 }
 
 function LoginPage({
+  onBackToHome,
   pendingGroupInvitation = false,
   authMode,
   setAuthMode,
@@ -5884,8 +5978,15 @@ function LoginPage({
   return (
     <div className="login-shell">
       <div className="login-card">
+        {onBackToHome && (
+          <button type="button" className="login-back" onClick={onBackToHome}>
+            <ChevronLeft size={16} aria-hidden="true" />
+            Back to home
+          </button>
+        )}
+
         <div className="brand login-brand">
-          <div className="brand-logo">🌱</div>
+          <div className="brand-logo"><Sprout size={22} aria-hidden="true" /></div>
 
           <div>
             <h1>Mahei-Pathap</h1>

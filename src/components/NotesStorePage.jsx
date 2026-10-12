@@ -162,7 +162,7 @@ export default function NotesStorePage({ authUser, userName, studentProfile, isA
             downloadNote(note);
           } catch (verifyError) { setError(verifyError.message); }
         },
-        theme: { color: "#ef7d5b" },
+        theme: { color: "#ab4d2b" },
       });
       checkout.open();
     } catch (purchaseError) { setError(purchaseError.message || "Checkout could not be started."); }

@@ -24,7 +24,7 @@ Use Appwrite for membership, chat, and files; **LiveKit Cloud** for calls; and *
 - The owner generates, copies, and revokes invitation links. Links expire after seven days.
 - Friends open the link, sign in or register, review the group name, and explicitly join.
 - Preserve the invitation through authentication. Handle expired links, full groups, and existing membership clearly.
-- Members can leave. The owner can remove members, transfer ownership, or archive the group.
+- Members can leave. The owner can remove members, transfer ownership, archive the group, or delete it permanently (with confirmation). The owner cannot leave while owning the group.
 - Archived groups remain readable but cannot accept new messages, edits, members, or calls.
 
 ### Group chat

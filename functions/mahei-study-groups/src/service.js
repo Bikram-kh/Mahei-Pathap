@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { fail } from './policy.js';
 import { newId as generateId } from './appwrite.js';
-import { archiveGroup, createGroup, getGroup, leaveGroup, listGroups, removeMember, transferOwnership } from './groups.js';
+import { archiveGroup, createGroup, deleteGroup, getGroup, leaveGroup, listGroups, removeMember, transferOwnership } from './groups.js';
 import { createInvite, joinGroup, previewInvite, revokeInvite } from './invites.js';
 import { deleteMessage, listMessages, sendMessage } from './messages.js';
 import { createNote, deleteNote, finalizePdf, liveblocksAuth, preparePdf } from './notes.js';
 import { endCall, joinCall, startCall } from './calls.js';
 
 const ACTIONS = {
-  createGroup, listGroups, getGroup, removeMember, leaveGroup, transferOwnership, archiveGroup,
+  createGroup, listGroups, getGroup, removeMember, leaveGroup, transferOwnership, archiveGroup, deleteGroup,
   createInvite, revokeInvite, previewInvite, joinGroup,
   sendMessage, listMessages, deleteMessage,
   createNote, deleteNote, preparePdf, finalizePdf, liveblocksAuth,
