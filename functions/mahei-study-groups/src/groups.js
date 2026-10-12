@@ -4,6 +4,8 @@ import { publicCall, publicGroup, publicInvite, publicMember, publicNote, visibl
 
 const MAX_GROUPS_PER_PERSON = 20;
 const GROUPS_CREATED_PER_HOUR = 5;
+// Deleting a long chat issues one request per message; a few at a time keeps it inside the function timeout.
+const PURGE_CONCURRENCY = 10;
 
 export async function createGroup(ctx, body) {
   const name = validText(body.name, 'Group name', 80);
@@ -103,7 +105,7 @@ export async function removeMember(ctx, body) {
 
 export async function leaveGroup(ctx, body) {
   const { group } = await requireMember(ctx, body.groupId);
-  if (group.ownerId === ctx.userId) fail('Transfer ownership or archive the group before leaving it.', 409);
+  if (group.ownerId === ctx.userId) fail('Transfer ownership or delete the group before leaving it.', 409);
   await detachMember(ctx, group, ctx.userId);
   return {};
 }
@@ -119,6 +121,59 @@ export async function transferOwnership(ctx, body) {
   await ctx.db.update('members', memberDocId(group.$id, targetId), { ...target, role: 'owner' });
   await ctx.db.update('members', memberDocId(group.$id, ctx.userId), { ...current, role: 'member' });
   return { group: publicGroup(updated) };
+}
+
+const ignoreMissing = (error) => {
+  if (error?.status !== 404) throw error;
+};
+
+async function inBatches(items, fn) {
+  for (let start = 0; start < items.length; start += PURGE_CONCURRENCY) {
+    await Promise.all(items.slice(start, start + PURGE_CONCURRENCY).map(fn));
+  }
+}
+
+// Deleted documents leave the result set, so asking for the first page again walks the whole collection.
+async function purge(ctx, collection, groupId, release = async () => {}) {
+  for (let page = await ctx.db.byGroup(collection, groupId); page.length; page = await ctx.db.byGroup(collection, groupId)) {
+    await inBatches(page, async (doc) => {
+      await release(doc);
+      await ctx.db.delete(collection, doc.$id);
+    });
+  }
+}
+
+async function releaseNote(ctx, note) {
+  if (isCollaborative(note)) await ctx.providers.deleteNote(note.roomId).catch(ignoreMissing);
+  if (note.fileId) await ctx.db.deleteFile(note.fileId);
+}
+
+// Deleting is permanent and every step below can be repeated, so a failure part way through is fixed by deleting again.
+// Third-party rooms and files go first. The owner's membership and then the group record go last: the owner can retry
+// until the membership is gone, and a failure after that leaves at worst an unreachable group record, never a hidden
+// membership that would count against the owner's limit of groups.
+export async function deleteGroup(ctx, body) {
+  const { group } = await requireOwner(ctx, body.groupId);
+  return ctx.db.lock(`group:${group.$id}`, async () => {
+    const callId = callDocId(group.$id);
+    const call = await ctx.db.optional('calls', callId);
+    if (call?.status === 'active') await ctx.providers.endCall(call);
+    if (call) await ctx.db.delete('calls', callId);
+    await purge(ctx, 'notes', group.$id, (note) => releaseNote(ctx, note));
+
+    await ctx.db.deleteTeam(group.$id).catch(ignoreMissing);
+    await purge(ctx, 'messages', group.$id);
+    await purge(ctx, 'invites', group.$id);
+
+    const members = await ctx.db.byGroup('members', group.$id);
+    await inBatches(
+      members.filter((member) => member.userId !== ctx.userId),
+      (member) => ctx.db.delete('members', member.$id),
+    );
+    await ctx.db.delete('members', memberDocId(group.$id, ctx.userId));
+    await ctx.db.delete('groups', group.$id);
+    return {};
+  });
 }
 
 // Archiving closes the call and makes every shared note read-only before the group itself is marked archived.

@@ -14,7 +14,7 @@ Everything the browser does goes through one Appwrite Function, `mahei-study-gro
 | One-time provisioning script | `scripts/setup-study-groups.mjs` |
 | Tests (fake Appwrite and providers) | `tests/study-groups-*.test.js`, `tests/helpers/study-groups-fakes.js` |
 
-Function actions: `createGroup`, `listGroups`, `getGroup`, `removeMember`, `leaveGroup`, `transferOwnership`, `archiveGroup`, `createInvite`, `revokeInvite`, `previewInvite`, `joinGroup`, `sendMessage`, `listMessages`, `deleteMessage`, `createNote`, `deleteNote`, `preparePdf`, `finalizePdf`, `liveblocksAuth`, `startCall`, `joinCall`, `endCall`.
+Function actions: `createGroup`, `listGroups`, `getGroup`, `removeMember`, `leaveGroup`, `transferOwnership`, `archiveGroup`, `deleteGroup`, `createInvite`, `revokeInvite`, `previewInvite`, `joinGroup`, `sendMessage`, `listMessages`, `deleteMessage`, `createNote`, `deleteNote`, `preparePdf`, `finalizePdf`, `liveblocksAuth`, `startCall`, `joinCall`, `endCall`.
 
 ## Accounts you need
 
@@ -61,10 +61,11 @@ appwrite functions create-deployment --function-id mahei-study-groups --code fun
 ## Access rules the function enforces
 
 - Non-members always get "Group not found", so group ids cannot be probed.
-- Only the owner can create or revoke invitations, remove members, transfer ownership, archive, and start or end video sessions.
+- Only the owner can create or revoke invitations, remove members, transfer ownership, archive, delete the group, and start or end video sessions.
 - Invitations are random 256-bit tokens that expire after 7 days. Only a hash is stored, and the token is shown once, to the owner. Joining is explicit and idempotent, and a full (20) or archived group refuses new members.
 - Removing a member, or a member leaving, revokes their team membership, rotates every shared-note room so open editors are disconnected, and removes them from any active call.
 - Archiving ends the call, makes shared notes read-only and blocks new messages, notes, invitations and calls.
+- Deleting a group is owner-only and permanent, and works on active and archived groups. The function closes the call, deletes every shared note with its collaboration room or PDF, removes the team, then deletes the messages, invitations and memberships, and finally the group record. If a provider is unavailable the group stays in place, possibly with some notes already removed, and the owner can simply delete it again. The owner cannot leave a group; they transfer ownership or delete it.
 - PDFs are uploaded by the browser to a create-only bucket, then the function checks the size and the `%PDF-` header before sharing the file with the group's team. Anything else is deleted.
 - Copied personal notes are sanitised on the server. Paid Notes Store files are never copied.
 - Messages, groups, invitations, notes and PDFs are rate limited per person. Unexpected errors are logged for you and shown to students as a generic message.

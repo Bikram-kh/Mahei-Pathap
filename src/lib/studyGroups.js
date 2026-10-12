@@ -5,7 +5,7 @@ export async function studyGroupsRequest(action, payload = {}) {
   const execution = await functions.createExecution(functionId, JSON.stringify({ action, ...payload }), false, '/', 'POST', { 'Content-Type': 'application/json' });
   let result;
   try { result = JSON.parse(execution.responseBody || '{}'); } catch { throw new Error('Study Groups returned an unreadable response. Please try again.'); }
-  if (!result.success || execution.responseStatusCode >= 400) throw new Error(result.error || result.message || 'Study Groups is unavailable. Please ask the administrator to complete setup.');
+  if (!result.success || execution.responseStatusCode >= 400) throw Object.assign(new Error(result.error || result.message || 'Study Groups is unavailable. Please ask the administrator to complete setup.'), { status: execution.responseStatusCode });
   return result;
 }
 export function subscribeToStudyGroups(callback) {
